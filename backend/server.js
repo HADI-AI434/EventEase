@@ -16,6 +16,12 @@ const adminAnalyticsRoutes = require('./routes/adminAnalyticsRoutes');
 
 const app = express();
 const MONGODB_URI = process.env.MONGODB_URI;
+console.log(
+    'MongoDB URI configured:',
+    MONGODB_URI ? 'YES' : 'NO',
+    'Atlas:',
+    MONGODB_URI?.startsWith('mongodb+srv://') ? 'YES' : 'NO'
+);
 if (!MONGODB_URI) {
     throw new Error('MONGODB_URI environment variable is missing.');
 }
