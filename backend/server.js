@@ -15,6 +15,10 @@ const customerAnalyticsRoutes = require('./routes/customerAnalyticsRoutes');
 const adminAnalyticsRoutes = require('./routes/adminAnalyticsRoutes');
 
 const app = express();
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+    throw new Error('MONGODB_URI environment variable is missing.');
+}
 
 // CORS CONFIGURATION
 const allowedOrigins = (
@@ -37,6 +41,32 @@ app.use(cors({
 
 // REQUEST BODY LIMIT
 app.use(express.json({ limit: '1mb' }));
+
+// CONNECT TO MONGODB BEFORE HANDLING API REQUESTS
+let dbConnectionPromise;
+
+async function connectToDatabase(req, res, next) {
+    try {
+        if (mongoose.connection.readyState !== 1) {
+            if (!dbConnectionPromise) {
+                dbConnectionPromise = mongoose.connect(MONGODB_URI)
+                    .catch(error => {
+                        dbConnectionPromise = null;
+                        throw error;
+                    });
+            }
+
+            await dbConnectionPromise;
+        }
+
+        next();
+    } catch (error) {
+        console.error('MongoDB connection failed:', error.message);
+        next(error);
+    }
+}
+
+app.use(connectToDatabase);
 
 // API ROUTES
 app.use('/api/auth', authRoutes);
@@ -98,42 +128,5 @@ app.use((error, req, res, next) => {
     });
 });
 
-// SERVER CONFIGURATION
-const PORT = process.env.PORT || 5000;
-const MONGODB_URI =
-    process.env.MONGODB_URI ||
-    'mongodb://127.0.0.1:27017/eventease';
-
-let server;
-
-async function startServer() {
-    try {
-        await mongoose.connect(MONGODB_URI);
-
-        console.log('MongoDB connected successfully!');
-
-        server = app.listen(PORT, () => {
-            console.log(`EventEase server running on port ${PORT}`);
-        });
-    } catch (error) {
-        console.error('MongoDB connection failed:', error.message);
-        process.exit(1);
-    }
-}
-
-// GRACEFUL SHUTDOWN
-async function shutdown() {
-    console.log('Shutting down EventEase server...');
-
-    if (server) {
-        await new Promise(resolve => server.close(resolve));
-    }
-
-    await mongoose.disconnect();
-    process.exit(0);
-}
-
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
-
-startServer();
+// EXPORT EXPRESS APP FOR VERCEL
+module.exports = app;
