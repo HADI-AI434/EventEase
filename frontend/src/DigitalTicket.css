@@ -1,0 +1,157 @@
+.digital-ticket {
+    width: min(100% - 24px, 440px);
+    margin: 30px auto;
+    background: #ffffff;
+    color: #222222;
+    border: 2px dashed #2563eb;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    font-family: Arial, sans-serif;
+}
+
+.ticket-header {
+    background: #1e40af;
+    color: white;
+    padding: 22px 16px;
+    text-align: center;
+}
+
+.ticket-header h2 {
+    margin: 0 0 8px;
+    font-size: 28px;
+}
+
+.ticket-header span {
+    font-size: 12px;
+    letter-spacing: 2px;
+}
+
+.ticket-body {
+    padding: 24px;
+}
+
+.ticket-body h3 {
+    color: #1e40af;
+    font-size: 23px;
+    margin: 0 0 20px;
+    overflow-wrap: anywhere;
+}
+
+.ticket-body p {
+    margin: 12px 0;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.ticket-reference {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.ticket-qr {
+    margin-top: 25px;
+    padding-top: 20px;
+    border-top: 1px dashed #999999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.ticket-qr svg {
+    width: min(180px, 100%);
+    height: auto;
+}
+
+.ticket-qr p {
+    color: #555555;
+    font-size: 13px;
+}
+
+.download-ticket-btn {
+    display: block;
+    width: 100%;
+    margin-top: 20px;
+    padding: 13px 16px;
+    background: #1e40af;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.download-ticket-btn:hover:not(:disabled) {
+    background: #1d4ed8;
+}
+
+.download-ticket-btn:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.download-ticket-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.download-ticket-btn:focus-visible {
+    outline: 3px solid #10b981;
+    outline-offset: 3px;
+}
+
+.ticket-unavailable {
+    max-width: 440px;
+    margin: 30px auto;
+    padding: 20px;
+    text-align: center;
+    background: #ffffff;
+    color: #b91c1c;
+    border-radius: 12px;
+}
+
+@media (max-width: 480px) {
+    .digital-ticket {
+        margin: 18px auto;
+        width: calc(100% - 20px);
+        border-radius: 12px;
+    }
+
+    .ticket-header {
+        padding: 18px 12px;
+    }
+
+    .ticket-header h2 {
+        font-size: 24px;
+    }
+
+    .ticket-body {
+        padding: 18px;
+    }
+
+    .ticket-body h3 {
+        font-size: 20px;
+    }
+}
+
+@media print {
+    .digital-ticket {
+        width: 100%;
+        max-width: 440px;
+        margin: 0 auto;
+        box-shadow: none;
+        break-inside: avoid;
+    }
+
+    .download-ticket-btn {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .download-ticket-btn {
+        transition: none;
+    }
+}
