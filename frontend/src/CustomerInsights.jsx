@@ -85,7 +85,7 @@ function CustomerInsights({ token }) {
                     method: 'GET',
                     cache: 'no-store',
                     headers: {
-                        Authorization: `Bearer ${activetoken}`
+                        Authorization: `Bearer ${activeToken}`
                     }
                 }
             );
