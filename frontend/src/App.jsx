@@ -1,3 +1,4 @@
+import ResetPassword from './ResetPassword';
 import { API_BASE_URL } from './api';
 import { useState, useEffect, useRef } from 'react';
 import './App.css';
@@ -713,6 +714,11 @@ function App() {
     } finally {
       setCancellingBookingId(null);
     }
+  }
+
+  // SHOW PASSWORD RESET PAGE WHEN OPENED FROM EMAIL
+  if (window.location.pathname === '/reset-password') {
+    return <ResetPassword />;
   }
 
   return (

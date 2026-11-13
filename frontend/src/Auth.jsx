@@ -4,13 +4,17 @@ import './Auth.css';
 
 function Auth({ onClose, onLogin }) {
     const [isLogin, setIsLogin] = useState(true);
+    const [isForgotPassword, setIsForgotPassword] = useState(false);
+
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+
     const [message, setMessage] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // LOGIN AND REGISTRATION
     async function handleSubmit(e) {
         e.preventDefault();
 
@@ -81,10 +85,74 @@ function Auth({ onClose, onLogin }) {
         }
     }
 
+    // FORGOT PASSWORD
+    async function handleForgotPassword(e) {
+        e.preventDefault();
+
+        if (isSubmitting) return;
+
+        const cleanEmail = email.trim();
+
+        if (!cleanEmail) {
+            setMessage('Please enter your email address.');
+            return;
+        }
+
+        setIsSubmitting(true);
+        setMessage('');
+
+        try {
+            const response = await fetch(
+                `${API_BASE_URL}/api/auth/forgot-password`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: cleanEmail
+                    })
+                }
+            );
+
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                setMessage(
+                    data.message || 'Unable to process your request. Please try again.'
+                );
+                return;
+            }
+
+            setMessage(
+                data.message ||
+                'If an account exists with that email, a password reset link will be sent.'
+            );
+
+        } catch (error) {
+            setMessage('Unable to connect to the server. Please try again.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    }
+
+    // SWITCH BETWEEN LOGIN AND REGISTRATION
     function handleModeSwitch() {
         if (isSubmitting) return;
 
         setIsLogin(!isLogin);
+        setIsForgotPassword(false);
+        setMessage('');
+        setPassword('');
+        setConfirmPassword('');
+    }
+
+    // RETURN TO LOGIN FROM FORGOT PASSWORD
+    function handleBackToLogin() {
+        if (isSubmitting) return;
+
+        setIsForgotPassword(false);
+        setIsLogin(true);
         setMessage('');
         setPassword('');
         setConfirmPassword('');
@@ -110,92 +178,174 @@ function Auth({ onClose, onLogin }) {
                 <h1>Event<span>Ease</span></h1>
 
                 <h2 id="auth-heading">
-                    {isLogin ? 'Welcome Back!' : 'Create Account'}
+                    {isForgotPassword
+                        ? 'Forgot Password?'
+                        : isLogin
+                            ? 'Welcome Back!'
+                            : 'Create Account'}
                 </h2>
 
                 <p>
-                    {isLogin
-                        ? 'Login to discover amazing events.'
-                        : 'Join EventEase and discover amazing experiences.'}
+                    {isForgotPassword
+                        ? 'Enter your registered email address. We will send you a password reset link if an account exists.'
+                        : isLogin
+                            ? 'Login to discover amazing events.'
+                            : 'Join EventEase and discover amazing experiences.'}
                 </p>
 
-                <form onSubmit={handleSubmit}>
-                    {!isLogin && (
+                {/* FORGOT PASSWORD FORM */}
+                {isForgotPassword ? (
+                    <form onSubmit={handleForgotPassword}>
                         <input
-                            type="text"
-                            placeholder="Full Name"
-                            aria-label="Full Name"
-                            autoComplete="name"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
+                            type="email"
+                            placeholder="Email Address"
+                            aria-label="Email Address"
+                            autoComplete="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
                             required
                         />
-                    )}
 
-                    <input
-                        type="email"
-                        placeholder="Email Address"
-                        aria-label="Email Address"
-                        autoComplete="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                    />
+                        {message && (
+                            <p
+                                className="auth-message"
+                                role="status"
+                                aria-live="polite"
+                            >
+                                {message}
+                            </p>
+                        )}
 
-                    <input
-                        type="password"
-                        placeholder="Password"
-                        aria-label="Password"
-                        autoComplete={isLogin ? 'current-password' : 'new-password'}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                    />
+                        <button
+                            type="submit"
+                            className="auth-submit"
+                            disabled={isSubmitting}
+                        >
+                            {isSubmitting
+                                ? 'Sending...'
+                                : 'Send Reset Link'}
+                        </button>
 
-                    {!isLogin && (
-                        <input
-                            type="password"
-                            placeholder="Confirm Password"
-                            aria-label="Confirm Password"
-                            autoComplete="new-password"
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            required
-                        />
-                    )}
+                        <p className="auth-switch">
+                            Remember your password?
 
-                    {message && (
-                        <p className="auth-message" role="status" aria-live="polite">
-                            {message}
+                            <button
+                                type="button"
+                                onClick={handleBackToLogin}
+                                disabled={isSubmitting}
+                            >
+                                {' '}Back to Login
+                            </button>
                         </p>
-                    )}
+                    </form>
+                ) : (
+                    <>
+                        {/* LOGIN AND REGISTRATION FORM */}
+                        <form onSubmit={handleSubmit}>
+                            {!isLogin && (
+                                <input
+                                    type="text"
+                                    placeholder="Full Name"
+                                    aria-label="Full Name"
+                                    autoComplete="name"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    required
+                                />
+                            )}
 
-                    <button
-                        type="submit"
-                        className="auth-submit"
-                        disabled={isSubmitting}
-                    >
-                        {isSubmitting
-                            ? 'Please wait...'
-                            : isLogin
-                                ? 'Login'
-                                : 'Create Account'}
-                    </button>
-                </form>
+                            <input
+                                type="email"
+                                placeholder="Email Address"
+                                aria-label="Email Address"
+                                autoComplete="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
 
-                <p className="auth-switch">
-                    {isLogin
-                        ? "Don't have an account?"
-                        : 'Already have an account?'}
+                            <input
+                                type="password"
+                                placeholder="Password"
+                                aria-label="Password"
+                                autoComplete={
+                                    isLogin
+                                        ? 'current-password'
+                                        : 'new-password'
+                                }
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                            />
 
-                    <button
-                        type="button"
-                        onClick={handleModeSwitch}
-                        disabled={isSubmitting}
-                    >
-                        {isLogin ? ' Sign Up' : ' Login'}
-                    </button>
-                </p>
+                            {!isLogin && (
+                                <input
+                                    type="password"
+                                    placeholder="Confirm Password"
+                                    aria-label="Confirm Password"
+                                    autoComplete="new-password"
+                                    value={confirmPassword}
+                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                    required
+                                />
+                            )}
+
+                            {message && (
+                                <p
+                                    className="auth-message"
+                                    role="status"
+                                    aria-live="polite"
+                                >
+                                    {message}
+                                </p>
+                            )}
+
+                            <button
+                                type="submit"
+                                className="auth-submit"
+                                disabled={isSubmitting}
+                            >
+                                {isSubmitting
+                                    ? 'Please wait...'
+                                    : isLogin
+                                        ? 'Login'
+                                        : 'Create Account'}
+                            </button>
+                        </form>
+
+                        {/* FORGOT PASSWORD LINK */}
+                        {isLogin && (
+                            <p className="auth-switch">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsForgotPassword(true);
+                                        setMessage('');
+                                        setPassword('');
+                                    }}
+                                    disabled={isSubmitting}
+                                >
+                                    Forgot Password?
+                                </button>
+                            </p>
+                        )}
+
+                        {/* LOGIN / SIGNUP SWITCH */}
+                        <p className="auth-switch">
+                            {isLogin
+                                ? "Don't have an account?"
+                                : 'Already have an account?'}
+
+                            <button
+                                type="button"
+                                onClick={handleModeSwitch}
+                                disabled={isSubmitting}
+                            >
+                                {isLogin ? ' Sign Up' : ' Login'}
+                            </button>
+                        </p>
+                    </>
+                )}
             </div>
         </div>
     );

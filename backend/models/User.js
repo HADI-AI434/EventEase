@@ -1,3 +1,4 @@
+
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema(
@@ -25,6 +26,17 @@ const userSchema = new mongoose.Schema(
             type: String,
             enum: ['customer', 'organizer', 'admin'],
             default: 'customer'
+        },
+
+        // PASSWORD RESET FIELDS
+        resetPasswordToken: {
+            type: String,
+            default: undefined
+        },
+
+        resetPasswordExpires: {
+            type: Date,
+            default: undefined
         }
     },
     {

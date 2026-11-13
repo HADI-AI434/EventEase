@@ -1,7 +1,11 @@
+
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const { sendPasswordResetEmail } = require('../utils/emailService');
+
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
@@ -43,7 +47,7 @@ function validateRegistration(name, email, password) {
     return null;
 }
 
-// User Registration API
+// USER REGISTRATION API
 router.post('/register', async (req, res) => {
     try {
         const { name, email, password } = req.body;
@@ -57,9 +61,10 @@ router.post('/register', async (req, res) => {
             });
         }
 
-        // Check if user already exists
+        const normalizedEmail = email.toLowerCase().trim();
+
         const existingUser = await User.findOne({
-            email: email.toLowerCase().trim()
+            email: normalizedEmail
         });
 
         if (existingUser) {
@@ -68,17 +73,14 @@ router.post('/register', async (req, res) => {
             });
         }
 
-        // Hash password
         const hashedPassword = await bcrypt.hash(password, 12);
 
-        // Create new user
         const newUser = new User({
-            name,
-            email,
+            name: name.trim(),
+            email: normalizedEmail,
             password: hashedPassword
         });
 
-        // Save user in MongoDB
         await newUser.save();
 
         res.status(201).json({
@@ -106,7 +108,7 @@ router.post('/register', async (req, res) => {
     }
 });
 
-// User Login API
+// USER LOGIN API
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -136,7 +138,6 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        // Find user by email
         const user = await User.findOne({
             email: email.toLowerCase().trim()
         });
@@ -147,7 +148,6 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        // Compare entered password with hashed password
         const isMatch = await bcrypt.compare(
             password,
             user.password
@@ -185,10 +185,177 @@ router.post('/login', async (req, res) => {
     }
 });
 
-// Protected profile route
+// FORGOT PASSWORD API
+router.post('/forgot-password', async (req, res) => {
+    let user;
+
+    try {
+        const { email } = req.body;
+
+        if (
+            typeof email !== 'string' ||
+            !email.trim() ||
+            email.trim().length > 254 ||
+            !isValidEmail(email.trim())
+        ) {
+            return res.status(400).json({
+                message: 'Please provide a valid email address.'
+            });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+
+        user = await User.findOne({
+            email: normalizedEmail
+        });
+
+        // Use the same response whether the account exists or not.
+        if (!user) {
+            return res.status(200).json({
+                message: 'If an account exists with that email, a password reset link will be sent.'
+            });
+        }
+
+        if (!process.env.FRONTEND_URL) {
+            throw new Error('FRONTEND_URL is not configured.');
+        }
+
+        // Generate a secure random token.
+        const resetToken = crypto.randomBytes(32).toString('hex');
+
+        // Store only the SHA-256 hash in the database.
+        user.resetPasswordToken = crypto
+            .createHash('sha256')
+            .update(resetToken)
+            .digest('hex');
+
+        // Token expires after 15 minutes.
+        user.resetPasswordExpires = new Date(
+            Date.now() + 15 * 60 * 1000
+        );
+
+        await user.save();
+
+        // Construct the reset link using the trusted frontend URL.
+        const resetUrl = new URL(
+            '/reset-password',
+            process.env.FRONTEND_URL
+        );
+
+        resetUrl.searchParams.set('token', resetToken);
+        resetUrl.searchParams.set('email', normalizedEmail);
+
+        try {
+            await sendPasswordResetEmail(
+                normalizedEmail,
+                resetUrl.toString()
+            );
+        } catch (emailError) {
+            console.error(
+                'Password reset email failed:',
+                emailError.message
+            );
+
+            user.resetPasswordToken = undefined;
+            user.resetPasswordExpires = undefined;
+            await user.save();
+        }
+
+        return res.status(200).json({
+            message: 'If an account exists with that email, a password reset link will be sent.'
+        });
+
+    } catch (error) {
+        console.error('Forgot password error:', error.message);
+
+        return res.status(500).json({
+            message: 'Unable to process your request right now.'
+        });
+    }
+});
+
+// RESET PASSWORD API
+router.post('/reset-password', async (req, res) => {
+    try {
+        const { email, token, password } = req.body;
+
+        if (
+            typeof email !== 'string' ||
+            typeof token !== 'string' ||
+            typeof password !== 'string' ||
+            !email.trim() ||
+            !token.trim()
+        ) {
+            return res.status(400).json({
+                message: 'Invalid password reset request.'
+            });
+        }
+
+        if (!isValidEmail(email.trim()) || email.trim().length > 254) {
+            return res.status(400).json({
+                message: 'Invalid password reset request.'
+            });
+        }
+
+        if (password.length < 8) {
+            return res.status(400).json({
+                message: 'Password must be at least 8 characters.'
+            });
+        }
+
+        if (Buffer.byteLength(password, 'utf8') > 72) {
+            return res.status(400).json({
+                message: 'Password must not exceed 72 bytes.'
+            });
+        }
+
+        // Hash the submitted token to compare with the database.
+        const hashedToken = crypto
+            .createHash('sha256')
+            .update(token)
+            .digest('hex');
+
+        // Find the account with a matching, unexpired reset token.
+        const user = await User.findOne({
+            email: email.toLowerCase().trim(),
+            resetPasswordToken: hashedToken,
+            resetPasswordExpires: { $gt: new Date() }
+        });
+
+        if (!user) {
+            return res.status(400).json({
+                message: 'Password reset link is invalid or has expired.'
+            });
+        }
+
+        // Hash and save the new password.
+        user.password = await bcrypt.hash(password, 12);
+
+        // Invalidate the reset token so it cannot be reused.
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpires = undefined;
+
+        await user.save();
+
+        return res.status(200).json({
+            message: 'Password has been reset successfully. You can now log in.'
+        });
+
+    } catch (error) {
+        console.error('Reset password error:', error.message);
+
+        return res.status(500).json({
+            message: 'Unable to reset your password right now.'
+        });
+    }
+});
+
+// PROTECTED PROFILE ROUTE
 router.get('/profile', authMiddleware, async (req, res) => {
     try {
-        const user = await User.findById(req.user.userId).select('-password');
+        const user = await User.findById(
+            req.user.userId
+        ).select('-password');
 
         if (!user) {
             return res.status(404).json({
@@ -213,9 +380,9 @@ router.get('/profile', authMiddleware, async (req, res) => {
     }
 });
 
+// ADMIN-ONLY ROUTE
 router.get(
     '/admin-only',
-
     authMiddleware,
     roleMiddleware('admin'),
     (req, res) => {
@@ -225,6 +392,7 @@ router.get(
     }
 );
 
+// ORGANIZER-ONLY ROUTE
 router.get(
     '/organizer-only',
     authMiddleware,
