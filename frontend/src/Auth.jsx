@@ -1,3 +1,4 @@
+
 import { API_BASE_URL } from './api';
 import { useState } from 'react';
 import './Auth.css';
@@ -10,6 +11,9 @@ function Auth({ onClose, onLogin }) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+
+    // New: Customer or Organizer registration choice
+    const [accountType, setAccountType] = useState('customer');
 
     const [message, setMessage] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,6 +44,15 @@ function Auth({ onClose, onLogin }) {
             return;
         }
 
+        // Only customer and organizer registration is permitted.
+        if (
+            !isLogin &&
+            !['customer', 'organizer'].includes(accountType)
+        ) {
+            setMessage('Please select a valid account type.');
+            return;
+        }
+
         setIsSubmitting(true);
 
         try {
@@ -48,8 +61,16 @@ function Auth({ onClose, onLogin }) {
                 : `${API_BASE_URL}/api/auth/register`;
 
             const body = isLogin
-                ? { email: cleanEmail, password }
-                : { name: cleanName, email: cleanEmail, password };
+                ? {
+                    email: cleanEmail,
+                    password
+                }
+                : {
+                    name: cleanName,
+                    email: cleanEmail,
+                    password,
+                    accountType
+                };
 
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -69,13 +90,22 @@ function Auth({ onClose, onLogin }) {
             }
 
             if (isLogin) {
+                if (!data.token || !data.user) {
+                    setMessage('Invalid login response from server.');
+                    return;
+                }
+
                 onLogin(data.token, data.user);
                 setMessage(`Welcome back, ${data.user.name}!`);
             } else {
-                setMessage('Account created successfully! You can now log in.');
+                setMessage(
+                    `Your ${accountType === 'organizer' ? 'Organizer' : 'Customer'} account was created successfully! You can now log in.`
+                );
+
                 setIsLogin(true);
                 setPassword('');
                 setConfirmPassword('');
+                setAccountType('customer');
             }
 
         } catch (error) {
@@ -145,6 +175,7 @@ function Auth({ onClose, onLogin }) {
         setMessage('');
         setPassword('');
         setConfirmPassword('');
+        setAccountType('customer');
     }
 
     // RETURN TO LOGIN FROM FORGOT PASSWORD
@@ -243,15 +274,72 @@ function Auth({ onClose, onLogin }) {
                         {/* LOGIN AND REGISTRATION FORM */}
                         <form onSubmit={handleSubmit}>
                             {!isLogin && (
-                                <input
-                                    type="text"
-                                    placeholder="Full Name"
-                                    aria-label="Full Name"
-                                    autoComplete="name"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    required
-                                />
+                                <>
+                                    <input
+                                        type="text"
+                                        placeholder="Full Name"
+                                        aria-label="Full Name"
+                                        autoComplete="name"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        required
+                                    />
+
+                                    {/* ACCOUNT TYPE SELECTION */}
+                                    <div style={{
+                                        textAlign: 'left',
+                                        marginBottom: '15px'
+                                    }}>
+                                        <label
+                                            htmlFor="accountType"
+                                            style={{
+                                                display: 'block',
+                                                marginBottom: '8px',
+                                                fontWeight: '600'
+                                            }}
+                                        >
+                                            Choose Your Account Type
+                                        </label>
+
+                                        <select
+                                            id="accountType"
+                                            value={accountType}
+                                            onChange={(e) =>
+                                                setAccountType(e.target.value)
+                                            }
+                                            disabled={isSubmitting}
+                                            required
+                                            style={{
+                                                width: '100%',
+                                                padding: '12px',
+                                                border: '1px solid #ccc',
+                                                borderRadius: '6px',
+                                                fontSize: '15px',
+                                                backgroundColor: '#fff',
+                                                color: '#222',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <option value="customer">
+                                                Customer — Discover and book events
+                                            </option>
+
+                                            <option value="organizer">
+                                                Organizer — Create and manage events
+                                            </option>
+                                        </select>
+
+                                        <small style={{
+                                            display: 'block',
+                                            marginTop: '7px',
+                                            color: '#666',
+                                            lineHeight: '1.5'
+                                        }}>
+                                            Organizers can also discover and book
+                                            events as customers.
+                                        </small>
+                                    </div>
+                                </>
                             )}
 
                             <input
@@ -285,7 +373,9 @@ function Auth({ onClose, onLogin }) {
                                     aria-label="Confirm Password"
                                     autoComplete="new-password"
                                     value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                    onChange={(e) =>
+                                        setConfirmPassword(e.target.value)
+                                    }
                                     required
                                 />
                             )}

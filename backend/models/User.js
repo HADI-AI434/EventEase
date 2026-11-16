@@ -22,6 +22,17 @@ const userSchema = new mongoose.Schema(
             required: true
         },
 
+        // NEW: SUPPORT MULTIPLE ROLES
+        // Keep undefined temporarily for safe migration
+        roles: {
+            type: [{
+                type: String,
+                enum: ['customer', 'organizer', 'admin']
+            }],
+            default: undefined
+        },
+
+        // LEGACY FIELD: Keep until backend migration is complete
         role: {
             type: String,
             enum: ['customer', 'organizer', 'admin'],

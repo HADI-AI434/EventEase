@@ -1,6 +1,8 @@
+
 import { API_BASE_URL } from './api';
 import { useState, useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
+import PakistanVenueAutocomplete from './PakistanVenueAutocomplete';
 
 import {
     ResponsiveContainer,
@@ -17,36 +19,71 @@ import {
 
 import DashboardAnalyticsCharts from './DashboardAnalyticsCharts';
 
+const MAX_EVENT_IMAGES = 8;
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
 function OrganizerDashboard({ onBack }) {
     const [events, setEvents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
-    // ORGANIZER ANALYTICS STATES
+
+    // ORGANIZER ANALYTICS
     const [analytics, setAnalytics] = useState(null);
     const [analyticsLoading, setAnalyticsLoading] = useState(true);
     const [analyticsError, setAnalyticsError] = useState('');
+
+    // EVENT FORM
     const [showForm, setShowForm] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [editingEventId, setEditingEventId] = useState(null);
 
-    // QR TICKET VERIFICATION STATES
+    // EVENT IMAGES
+    const [existingImages, setExistingImages] = useState([]);
+    const [selectedImageFiles, setSelectedImageFiles] = useState([]);
+    const [selectedImagePreviews, setSelectedImagePreviews] = useState([]);
+    const [imageUploading, setImageUploading] = useState(false);
+
+    // QR VERIFICATION
     const [showScanner, setShowScanner] = useState(false);
     const [verificationResult, setVerificationResult] = useState(null);
     const [scanning, setScanning] = useState(false);
 
-    const [formData, setFormData] = useState({
+    const initialFormData = {
         title: '',
         description: '',
         type: 'In-person',
         category: 'Other',
         date: '',
         location: '',
+        city: '',
+        venue: '',
+        province: '',
+        country: 'Pakistan',
+        coordinates: null,
         price: '',
         availableSeats: ''
-    });
+    };
 
-    // FETCH ORGANIZER'S EVENTS
+    const [formData, setFormData] = useState(initialFormData);
+
+    // CREATE PREVIEWS FOR SELECTED IMAGES
+    useEffect(() => {
+        const previews = selectedImageFiles.map(file => ({
+            name: file.name,
+            url: URL.createObjectURL(file)
+        }));
+
+        setSelectedImagePreviews(previews);
+
+        return () => {
+            previews.forEach(preview => {
+                URL.revokeObjectURL(preview.url);
+            });
+        };
+    }, [selectedImageFiles]);
+
+    // FETCH ORGANIZER EVENTS
     async function fetchMyEvents() {
         try {
             const savedUser = JSON.parse(
@@ -72,7 +109,8 @@ function OrganizerDashboard({ onBack }) {
                 throw new Error(data.message || 'Failed to fetch events.');
             }
 
-            setEvents(data.events);
+            setEvents(data.events || []);
+            setError('');
         } catch (err) {
             setError(err.message);
         } finally {
@@ -109,23 +147,19 @@ function OrganizerDashboard({ onBack }) {
             }
 
             setAnalytics(data.analytics);
-
         } catch (err) {
             setAnalyticsError(err.message);
-
         } finally {
             setAnalyticsLoading(false);
         }
     }
-
 
     useEffect(() => {
         fetchMyEvents();
         fetchOrganizerAnalytics();
     }, []);
 
-    // SCAN QR CODE FROM AN UPLOADED IMAGE
-
+    // UPLOAD-ONLY QR TICKET VERIFICATION
     async function handleImageUpload(e) {
         const file = e.target.files?.[0];
 
@@ -150,7 +184,10 @@ function OrganizerDashboard({ onBack }) {
             try {
                 const decodedText = await qrScanner.scanFile(file, true);
 
-                console.log('QR decoded text:', JSON.stringify(decodedText));
+                console.log(
+                    'QR decoded text:',
+                    JSON.stringify(decodedText)
+                );
 
                 const response = await fetch(
                     `${API_BASE_URL}/api/bookings/verify/${encodeURIComponent(decodedText.trim())}`,
@@ -170,17 +207,16 @@ function OrganizerDashboard({ onBack }) {
                     ...data,
                     valid: response.ok && data.valid
                 });
-
             } finally {
-                // Clean up without allowing a cleanup error
-                // to overwrite the actual verification result.
                 try {
                     await qrScanner.clear();
                 } catch (cleanupError) {
-                    console.warn('QR scanner cleanup:', cleanupError);
+                    console.warn(
+                        'QR scanner cleanup:',
+                        cleanupError
+                    );
                 }
             }
-
         } catch (error) {
             setVerificationResult({
                 valid: false,
@@ -188,24 +224,184 @@ function OrganizerDashboard({ onBack }) {
                     ? 'No readable QR code found in this image. Please try another image.'
                     : error.message || 'Unable to scan the uploaded image.'
             });
-
         } finally {
             setScanning(false);
             e.target.value = '';
         }
     }
 
-
-    // HANDLE INPUT CHANGES
+    // HANDLE FORM INPUT CHANGES
     function handleChange(e) {
         const { name, value } = e.target;
 
-        setFormData({
-            ...formData,
+        // Switching event type clears incompatible location details.
+        if (name === 'type') {
+            setFormData(previous => ({
+                ...previous,
+                type: value,
+                location: '',
+                city: '',
+                venue: '',
+                province: '',
+                country: 'Pakistan',
+                coordinates: null
+            }));
+
+            return;
+        }
+
+        setFormData(previous => ({
+            ...previous,
             [name]: value
-        });
+        }));
     }
 
+    // HANDLE SELECTED PAKISTANI VENUE
+    function handleVenueSelected(venueDetails) {
+        setFormData(previous => ({
+            ...previous,
+            venue: venueDetails.venue,
+            location: venueDetails.location,
+            city: venueDetails.city,
+            province: venueDetails.province,
+            country: 'Pakistan',
+            coordinates: venueDetails.coordinates
+        }));
+
+        setMessage('');
+    }
+
+    // CLEAR SELECTED VENUE WHEN ORGANIZER CHANGES SEARCH
+    function handleVenueSearchChanged() {
+        setFormData(previous => ({
+            ...previous,
+            venue: '',
+            location: '',
+            city: '',
+            province: '',
+            country: 'Pakistan',
+            coordinates: null
+        }));
+    }
+
+    // HANDLE NEW EVENT IMAGE SELECTION
+    function handleEventImagesChange(e) {
+        const files = Array.from(e.target.files || []);
+
+        const remainingSlots =
+            MAX_EVENT_IMAGES -
+            existingImages.length -
+            selectedImageFiles.length;
+
+        if (remainingSlots <= 0) {
+            setMessage(
+                `You can upload a maximum of ${MAX_EVENT_IMAGES} photos.`
+            );
+            e.target.value = '';
+            return;
+        }
+
+        const validFiles = [];
+
+        for (const file of files) {
+            if (
+                !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
+            ) {
+                setMessage(
+                    `${file.name} is not supported. Use JPG, PNG, or WebP.`
+                );
+                continue;
+            }
+
+            if (file.size > MAX_IMAGE_SIZE) {
+                setMessage(
+                    `${file.name} exceeds the 5 MB file size limit.`
+                );
+                continue;
+            }
+
+            validFiles.push(file);
+        }
+
+        const filesToAdd = validFiles.slice(0, remainingSlots);
+
+        if (validFiles.length > remainingSlots) {
+            setMessage(
+                `Only ${remainingSlots} more photo(s) can be added. Maximum is 8.`
+            );
+        } else if (filesToAdd.length > 0) {
+            setMessage('');
+        }
+
+        setSelectedImageFiles(previous => [
+            ...previous,
+            ...filesToAdd
+        ]);
+
+        e.target.value = '';
+    }
+
+    // REMOVE NEW IMAGE
+    function removeSelectedImage(index) {
+        setSelectedImageFiles(previous =>
+            previous.filter((_, imageIndex) => imageIndex !== index)
+        );
+    }
+
+    // REMOVE EXISTING IMAGE
+    function removeExistingImage(index) {
+        setExistingImages(previous =>
+            previous.filter((_, imageIndex) => imageIndex !== index)
+        );
+    }
+
+    // UPLOAD SELECTED IMAGES TO CLOUDINARY
+    async function uploadEventImages(token) {
+        if (selectedImageFiles.length === 0) {
+            return [];
+        }
+
+        const uploadFormData = new FormData();
+
+        selectedImageFiles.forEach(file => {
+            uploadFormData.append('images', file);
+        });
+
+        const response = await fetch(
+            `${API_BASE_URL}/api/uploads/images`,
+            {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`
+                },
+                body: uploadFormData
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                data.message || 'Event photo upload failed.'
+            );
+        }
+
+        if (!Array.isArray(data.images)) {
+            throw new Error('The image upload response was invalid.');
+        }
+
+        return data.images
+            .map(image => {
+                if (typeof image === 'string') {
+                    return image;
+                }
+
+                return image?.url;
+            })
+            .filter(Boolean);
+    }
+
+    // EDIT EVENT
     function handleEditClick(event) {
         const eventDate = new Date(event.date);
 
@@ -215,21 +411,52 @@ function OrganizerDashboard({ onBack }) {
         ).toISOString().slice(0, 16);
 
         setFormData({
-            title: event.title,
-            description: event.description,
-            type: event.type,
+            title: event.title || '',
+            description: event.description || '',
+            type: event.type || 'In-person',
             category: event.category || 'Other',
             date: localDate,
-            location: event.location,
-            price: event.price,
-            availableSeats: event.availableSeats
+            location: event.location || event.venue || '',
+            city: event.city || '',
+            venue: event.venue || '',
+            province: event.province || '',
+            country: event.country || 'Pakistan',
+            coordinates: event.coordinates || null,
+            price: event.price ?? '',
+            availableSeats: event.availableSeats ?? ''
         });
 
+        const eventImages = Array.isArray(event.images)
+            ? event.images
+                .map(image =>
+                    typeof image === 'string' ? image : image?.url
+                )
+                .filter(Boolean)
+            : [];
+
+        if (eventImages.length === 0 && event.imageUrl) {
+            eventImages.push(event.imageUrl);
+        }
+
+        setExistingImages(eventImages);
+        setSelectedImageFiles([]);
         setEditingEventId(event._id);
         setShowForm(true);
         setMessage('');
 
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    }
+
+    // RESET EVENT FORM
+    function resetEventForm() {
+        setFormData({ ...initialFormData });
+        setExistingImages([]);
+        setSelectedImageFiles([]);
+        setEditingEventId(null);
+        setShowForm(false);
     }
 
     // DELETE EVENT
@@ -238,14 +465,16 @@ function OrganizerDashboard({ onBack }) {
             'Are you sure you want to delete this event?'
         );
 
-        if (!confirmDelete) {
-            return;
-        }
+        if (!confirmDelete) return;
 
         try {
             const savedUser = JSON.parse(
                 localStorage.getItem('eventeaseUser')
             );
+
+            if (!savedUser?.token) {
+                throw new Error('Please log in first.');
+            }
 
             const response = await fetch(
                 `${API_BASE_URL}/api/events/${eventId}`,
@@ -260,20 +489,23 @@ function OrganizerDashboard({ onBack }) {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.message || 'Event deletion failed.');
+                throw new Error(
+                    data.message || 'Event deletion failed.'
+                );
             }
 
             setMessage('Event deleted successfully!');
             await fetchMyEvents();
-
         } catch (err) {
             setMessage(err.message);
         }
     }
 
-    // CREATE A NEW EVENT
+    // CREATE OR UPDATE EVENT
     async function handleCreateEvent(e) {
         e.preventDefault();
+
+        if (submitting) return;
 
         setSubmitting(true);
         setMessage('');
@@ -283,9 +515,121 @@ function OrganizerDashboard({ onBack }) {
                 localStorage.getItem('eventeaseUser')
             );
 
+            if (!savedUser?.token) {
+                throw new Error('Please log in first.');
+            }
+
+            if (
+                existingImages.length + selectedImageFiles.length >
+                MAX_EVENT_IMAGES
+            ) {
+                throw new Error(
+                    'An event can have a maximum of 8 photos.'
+                );
+            }
+
+            if (formData.type === 'In-person') {
+                if (
+                    !formData.venue ||
+                    !formData.location ||
+                    !formData.city ||
+                    !formData.coordinates ||
+                    typeof formData.coordinates.latitude !== 'number' ||
+                    typeof formData.coordinates.longitude !== 'number'
+                ) {
+                    throw new Error(
+                        'Please search for and select a valid venue in Pakistan.'
+                    );
+                }
+
+                const { latitude, longitude } = formData.coordinates;
+
+                if (
+                    latitude < -90 ||
+                    latitude > 90 ||
+                    longitude < -180 ||
+                    longitude > 180
+                ) {
+                    throw new Error('The selected venue coordinates are invalid.');
+                }
+            }
+
+            if (
+                !formData.title.trim() ||
+                !formData.description.trim() ||
+                !formData.date ||
+                formData.price === '' ||
+                formData.availableSeats === ''
+            ) {
+                throw new Error('Please complete all required event fields.');
+            }
+
+            if (
+                !Number.isFinite(Number(formData.price)) ||
+                Number(formData.price) < 0
+            ) {
+                throw new Error('Please enter a valid ticket price.');
+            }
+
+            if (
+                !Number.isInteger(Number(formData.availableSeats)) ||
+                Number(formData.availableSeats) < 1
+            ) {
+                throw new Error('Please enter a valid number of available seats.');
+            }
+
+            // UPLOAD SELECTED PHOTOS FIRST
+            setImageUploading(true);
+
+            const uploadedImages = await uploadEventImages(
+                savedUser.token
+            );
+
+            const finalImages = [
+                ...existingImages,
+                ...uploadedImages
+            ];
+
+            if (finalImages.length > MAX_EVENT_IMAGES) {
+                throw new Error(
+                    'An event can have a maximum of 8 photos.'
+                );
+            }
+
             const url = editingEventId
                 ? `${API_BASE_URL}/api/events/${editingEventId}`
                 : `${API_BASE_URL}/api/events`;
+
+            const eventPayload = {
+                ...formData,
+
+                // Store the complete address, not just the venue name.
+                location: formData.location,
+
+                venue: formData.type === 'In-person'
+                    ? formData.venue
+                    : '',
+
+                city: formData.type === 'In-person'
+                    ? formData.city
+                    : '',
+
+                province: formData.type === 'In-person'
+                    ? formData.province
+                    : '',
+
+                country: 'Pakistan',
+
+                coordinates: formData.type === 'In-person'
+                    ? formData.coordinates
+                    : null,
+
+                images: finalImages,
+                imageUrl: finalImages[0] || '',
+
+                price: Number(formData.price),
+                availableSeats: Number(formData.availableSeats)
+            };
 
             const response = await fetch(url, {
                 method: editingEventId ? 'PUT' : 'POST',
@@ -293,20 +637,17 @@ function OrganizerDashboard({ onBack }) {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${savedUser.token}`
                 },
-                body: JSON.stringify({
-                    ...formData,
-                    price: Number(formData.price),
-                    availableSeats: Number(formData.availableSeats)
-                })
-            }
-            );
+                body: JSON.stringify(eventPayload)
+            });
 
             const data = await response.json();
 
             if (!response.ok) {
                 throw new Error(
                     data.message ||
-                    (editingEventId ? 'Event update failed.' : 'Event creation failed.')
+                    (editingEventId
+                        ? 'Event update failed.'
+                        : 'Event creation failed.')
                 );
             }
 
@@ -316,25 +657,14 @@ function OrganizerDashboard({ onBack }) {
                     : 'Event created successfully!'
             );
 
-            setFormData({
-                title: '',
-                description: '',
-                type: 'In-person',
-                category: 'Other',
-                date: '',
-                location: '',
-                price: '',
-                availableSeats: ''
-            });
+            resetEventForm();
 
-            setShowForm(false);
-            setEditingEventId(null);
             await fetchMyEvents();
-
         } catch (err) {
             setMessage(err.message);
         } finally {
             setSubmitting(false);
+            setImageUploading(false);
         }
     }
 
@@ -346,24 +676,21 @@ function OrganizerDashboard({ onBack }) {
         return <p>{error}</p>;
     }
 
-
     // BEST-PERFORMING EVENT
     const bestPerformingEvent = analytics?.salesByEvent
         ?.filter(event => event.ticketsSold > 0)
         .sort((a, b) => {
-            // First compare ticket sales
             if (b.ticketsSold !== a.ticketsSold) {
                 return b.ticketsSold - a.ticketsSold;
             }
 
-            // If ticket sales are equal, compare revenue
             return b.revenue - a.revenue;
         })[0] || null;
-
 
     return (
         <div className="organizer-dashboard">
             <h1>Organizer Dashboard</h1>
+
             <button
                 className="login-btn"
                 onClick={() => {
@@ -373,6 +700,7 @@ function OrganizerDashboard({ onBack }) {
             >
                 {showScanner ? 'Close Scanner' : 'Scan Ticket'}
             </button>
+
             <button
                 className="login-btn"
                 onClick={onBack}
@@ -384,19 +712,9 @@ function OrganizerDashboard({ onBack }) {
                 className="login-btn"
                 onClick={() => {
                     if (showForm) {
-                        setShowForm(false);
+                        resetEventForm();
                     } else {
-                        setEditingEventId(null);
-                        setFormData({
-                            title: '',
-                            description: '',
-                            type: 'In-person',
-                            category: 'Other',
-                            date: '',
-                            location: '',
-                            price: '',
-                            availableSeats: ''
-                        });
+                        resetEventForm();
                         setShowForm(true);
                     }
 
@@ -408,14 +726,17 @@ function OrganizerDashboard({ onBack }) {
 
             {message && <p>{message}</p>}
 
+            {/* UPLOAD-ONLY QR TICKET SCANNER */}
             {showScanner && (
                 <div className="ticket-scanner-section">
                     <h2>Scan Customer Ticket</h2>
 
-                    <p>Upload the customer's QR code image to verify their ticket.</p>
+                    <p>
+                        Upload the customer's QR code image to verify their ticket.
+                    </p>
 
                     <div className="qr-upload-section">
-                        <h3>Or Upload QR Ticket Image</h3>
+                        <h3>Upload QR Ticket Image</h3>
 
                         <input
                             type="file"
@@ -424,10 +745,10 @@ function OrganizerDashboard({ onBack }) {
                             disabled={scanning}
                         />
 
-                        <p>Choose a screenshot or photo containing the customer's QR code.</p>
+                        <p>
+                            Choose a screenshot or photo containing the customer's QR code.
+                        </p>
                     </div>
-
-
 
                     <div
                         id="eventease-image-reader"
@@ -436,15 +757,15 @@ function OrganizerDashboard({ onBack }) {
 
                     {scanning && <p>Verifying ticket...</p>}
 
-
                     {verificationResult && (
-                        <div className={`verification-result ${verificationResult.valid
-                            ? 'ticket-valid'
-                            : verificationResult.message?.toLowerCase().includes('already used')
-                                ? 'ticket-used'
-                                : 'ticket-invalid'
-                            }`}>
-
+                        <div
+                            className={`verification-result ${verificationResult.valid
+                                    ? 'ticket-valid'
+                                    : verificationResult.message?.toLowerCase().includes('already used')
+                                        ? 'ticket-used'
+                                        : 'ticket-invalid'
+                                }`}
+                        >
                             <h3>
                                 {verificationResult.valid
                                     ? 'Ticket Valid! Entry Approved'
@@ -465,11 +786,17 @@ function OrganizerDashboard({ onBack }) {
                                         ).toLocaleString()}
                                     </p>
 
-                                    <p>Location: {verificationResult.ticket.location}</p>
+                                    <p>
+                                        Location: {verificationResult.ticket.location}
+                                    </p>
 
-                                    <p>Tickets: {verificationResult.ticket.quantity}</p>
+                                    <p>
+                                        Tickets: {verificationResult.ticket.quantity}
+                                    </p>
 
-                                    <p>Status: {verificationResult.ticket.status}</p>
+                                    <p>
+                                        Status: {verificationResult.ticket.status}
+                                    </p>
 
                                     <p>
                                         Reference: {verificationResult.ticket.bookingReference}
@@ -486,13 +813,16 @@ function OrganizerDashboard({ onBack }) {
                             )}
                         </div>
                     )}
-
                 </div>
             )}
 
+            {/* CREATE / EDIT EVENT FORM */}
             {showForm && (
                 <form onSubmit={handleCreateEvent}>
-                    <h2>{editingEventId ? 'Edit Event' : 'Create Event'}</h2>
+                    <h2>
+                        {editingEventId ? 'Edit Event' : 'Create Event'}
+                    </h2>
+
                     <input
                         type="text"
                         name="title"
@@ -520,7 +850,9 @@ function OrganizerDashboard({ onBack }) {
                     </select>
 
                     <div className="form-group">
-                        <label htmlFor="event-category">Event Category</label>
+                        <label htmlFor="event-category">
+                            Event Category
+                        </label>
 
                         <select
                             id="event-category"
@@ -549,14 +881,85 @@ function OrganizerDashboard({ onBack }) {
                         required
                     />
 
-                    <input
-                        type="text"
-                        name="location"
-                        placeholder="Event Location"
-                        value={formData.location}
-                        onChange={handleChange}
-                        required
-                    />
+                    {/* PAKISTAN VENUE AUTOCOMPLETE */}
+                    {formData.type === 'In-person' && (
+                        <div
+                            className="form-group venue-selection-section"
+                            style={{ margin: '20px 0' }}
+                        >
+                            <h3>Event Venue Details</h3>
+
+                            <p>
+                                Search for your real event venue in Pakistan
+                                and select a result.
+                            </p>
+
+                            <PakistanVenueAutocomplete
+                                key={editingEventId || 'new-event'}
+                                initialValue={formData.venue}
+                                onSelected={handleVenueSelected}
+                                onClear={handleVenueSearchChanged}
+                            />
+
+                            {formData.venue && formData.coordinates && (
+                                <div
+                                    className="selected-venue-details"
+                                    style={{
+                                        padding: '14px',
+                                        marginTop: '12px',
+                                        border: '1px solid #334155',
+                                        borderRadius: '9px',
+                                        background: '#172033',
+                                        overflowWrap: 'anywhere'
+                                    }}
+                                >
+                                    <h4>Selected Venue</h4>
+
+                                    <p>
+                                        <strong>Venue:</strong>{' '}
+                                        {formData.venue}
+                                    </p>
+
+                                    <p>
+                                        <strong>Full address:</strong>{' '}
+                                        {formData.location}
+                                    </p>
+
+                                    <p>
+                                        <strong>City:</strong>{' '}
+                                        {formData.city}
+                                    </p>
+
+                                    <p>
+                                        <strong>Province:</strong>{' '}
+                                        {formData.province || 'Not available'}
+                                    </p>
+
+                                    <p>
+                                        <strong>Country:</strong> Pakistan
+                                    </p>
+
+                                    <p>
+                                        <strong>Coordinates:</strong>{' '}
+                                        {formData.coordinates.latitude},{' '}
+                                        {formData.coordinates.longitude}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ONLINE EVENT LOCATION */}
+                    {formData.type === 'Online' && (
+                        <input
+                            type="text"
+                            name="location"
+                            placeholder="Online Location / Meeting Platform"
+                            value={formData.location}
+                            onChange={handleChange}
+                            required
+                        />
+                    )}
 
                     <input
                         type="number"
@@ -579,18 +982,128 @@ function OrganizerDashboard({ onBack }) {
                         required
                     />
 
-                    <button type="submit" disabled={submitting}>
-                        {submitting
-                            ? 'Saving...'
-                            : editingEventId
-                                ? 'Update Event'
-                                : 'Create Event'}
+                    {/* EVENT PHOTO UPLOAD */}
+                    <div className="form-group event-image-upload">
+                        <h3>Event Photos</h3>
+
+                        <p>
+                            Upload up to 8 photos. Supported formats:
+                            JPG, PNG, WebP. Maximum size: 5 MB per photo.
+                        </p>
+
+                        <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            multiple
+                            onChange={handleEventImagesChange}
+                            disabled={
+                                existingImages.length + selectedImageFiles.length >= MAX_EVENT_IMAGES ||
+                                submitting
+                            }
+                        />
+
+                        <p>
+                            Photos selected:{' '}
+                            {existingImages.length + selectedImageFiles.length}
+                            {' / '}
+                            {MAX_EVENT_IMAGES}
+                        </p>
+
+                        {/* EXISTING PHOTOS */}
+                        {existingImages.length > 0 && (
+                            <div className="event-image-preview-grid">
+                                <h4>Saved Photos</h4>
+
+                                <div className="event-image-preview-grid">
+                                    {existingImages.map((image, index) => (
+                                        <div
+                                            className="event-image-preview"
+                                            key={`existing-${image}-${index}`}
+                                        >
+                                            <img
+                                                src={image}
+                                                alt={`Event photo ${index + 1}`}
+                                                style={{
+                                                    width: '150px',
+                                                    height: '110px',
+                                                    objectFit: 'cover'
+                                                }}
+                                            />
+
+                                            <button
+                                                type="button"
+                                                onClick={() => removeExistingImage(index)}
+                                                disabled={submitting}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* NEW PHOTO PREVIEWS */}
+                        {selectedImagePreviews.length > 0 && (
+                            <div className="event-image-preview-grid">
+                                <h4>New Photos</h4>
+
+                                <div className="event-image-preview-grid">
+                                    {selectedImagePreviews.map((preview, index) => (
+                                        <div
+                                            className="event-image-preview"
+                                            key={`new-${index}-${preview.name}`}
+                                        >
+                                            <img
+                                                src={preview.url}
+                                                alt={preview.name}
+                                                style={{
+                                                    width: '150px',
+                                                    height: '110px',
+                                                    objectFit: 'cover'
+                                                }}
+                                            />
+
+                                            <p>{preview.name}</p>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => removeSelectedImage(index)}
+                                                disabled={submitting}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <button
+                        type="submit"
+                        disabled={submitting || imageUploading}
+                    >
+                        {imageUploading
+                            ? 'Uploading photos...'
+                            : submitting
+                                ? 'Saving...'
+                                : editingEventId
+                                    ? 'Update Event'
+                                    : 'Create Event'}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={resetEventForm}
+                        disabled={submitting}
+                    >
+                        Cancel
                     </button>
                 </form>
             )}
 
-
-            {/* ORGANIZER ANALYTICS DASHBOARD */}
+            {/* ORGANIZER ANALYTICS */}
             <section className="analytics-section">
                 <h2>Organizer Analytics</h2>
 
@@ -600,8 +1113,6 @@ function OrganizerDashboard({ onBack }) {
                     <p>{analyticsError}</p>
                 ) : analytics && (
                     <div className="analytics-grid">
-
-                        {/* BOOKING SUCCESS RATE */}
                         <div className="analytics-card">
                             <h3>Booking Success Rate</h3>
                             <p>{analytics.bookingSuccessRate}%</p>
@@ -610,7 +1121,6 @@ function OrganizerDashboard({ onBack }) {
                             </small>
                         </div>
 
-                        {/* CANCELLATION RATE */}
                         <div className="analytics-card">
                             <h3>Cancellation Rate</h3>
                             <p>{analytics.cancellationRate}%</p>
@@ -618,7 +1128,6 @@ function OrganizerDashboard({ onBack }) {
                                 {analytics.cancelledBookings} cancelled bookings
                             </small>
                         </div>
-
 
                         <div className="analytics-card">
                             <h3>Total Events</h3>
@@ -649,7 +1158,6 @@ function OrganizerDashboard({ onBack }) {
                             <h3>Available Seats</h3>
                             <p>{analytics.totalAvailableSeats}</p>
                         </div>
-
                     </div>
                 )}
             </section>
@@ -657,13 +1165,12 @@ function OrganizerDashboard({ onBack }) {
             {/* DASHBOARD ANALYTICS CHARTS */}
             <DashboardAnalyticsCharts dashboardType="organizer" />
 
-            {/* EVENT-WISE SALES CHART */}
+            {/* EVENT-WISE SALES */}
             <section className="sales-chart-section">
                 <h2>Event Sales Performance</h2>
 
                 {analytics?.salesByEvent?.length > 0 ? (
                     <div className="sales-chart">
-
                         {analytics.salesByEvent.map((event, index) => {
                             const maxTickets = Math.max(
                                 ...analytics.salesByEvent.map(
@@ -676,7 +1183,10 @@ function OrganizerDashboard({ onBack }) {
                                 (event.ticketsSold / maxTickets) * 100;
 
                             return (
-                                <div className="sales-chart-item" key={index}>
+                                <div
+                                    className="sales-chart-item"
+                                    key={index}
+                                >
                                     <h3>{event.eventTitle}</h3>
 
                                     <div className="sales-bar-background">
@@ -691,25 +1201,21 @@ function OrganizerDashboard({ onBack }) {
                                 </div>
                             );
                         })}
-
                     </div>
                 ) : (
                     <p>No sales data available yet.</p>
                 )}
             </section>
 
-
-
-            {/* MONTHLY ANALYTICS AND EVENT PERFORMANCE */}
+            {/* MONTHLY ANALYTICS */}
             <section className="monthly-analytics-section">
-
                 <h2>Sales Analytics</h2>
 
                 <div className="organizer-charts-grid">
-
                     {/* MONTHLY REVENUE */}
                     <div className="monthly-chart-card">
                         <h3>Monthly Revenue</h3>
+
                         <p className="chart-description">
                             Revenue generated from successful bookings.
                         </p>
@@ -722,7 +1228,11 @@ function OrganizerDashboard({ onBack }) {
                                         stroke="#334155"
                                     />
 
-                                    <XAxis dataKey="month" stroke="#aab6c7" />
+                                    <XAxis
+                                        dataKey="month"
+                                        stroke="#aab6c7"
+                                    />
+
                                     <YAxis
                                         stroke="#aab6c7"
                                         tickFormatter={value =>
@@ -760,6 +1270,7 @@ function OrganizerDashboard({ onBack }) {
                     {/* MONTHLY TICKET SALES */}
                     <div className="monthly-chart-card">
                         <h3>Monthly Ticket Sales</h3>
+
                         <p className="chart-description">
                             Number of tickets sold each month.
                         </p>
@@ -772,7 +1283,11 @@ function OrganizerDashboard({ onBack }) {
                                         stroke="#334155"
                                     />
 
-                                    <XAxis dataKey="month" stroke="#aab6c7" />
+                                    <XAxis
+                                        dataKey="month"
+                                        stroke="#aab6c7"
+                                    />
+
                                     <YAxis stroke="#aab6c7" />
 
                                     <Tooltip
@@ -800,6 +1315,7 @@ function OrganizerDashboard({ onBack }) {
                     {/* EVENT PERFORMANCE */}
                     <div className="monthly-chart-card event-performance-chart">
                         <h3>Event Performance Comparison</h3>
+
                         <p className="chart-description">
                             Compare ticket sales across your events.
                         </p>
@@ -816,7 +1332,10 @@ function OrganizerDashboard({ onBack }) {
                                         stroke="#334155"
                                     />
 
-                                    <XAxis type="number" stroke="#aab6c7" />
+                                    <XAxis
+                                        type="number"
+                                        stroke="#aab6c7"
+                                    />
 
                                     <YAxis
                                         type="category"
@@ -849,11 +1368,8 @@ function OrganizerDashboard({ onBack }) {
                             <p>No event performance data available yet.</p>
                         )}
                     </div>
-
                 </div>
             </section>
-
-
 
             {/* BEST-PERFORMING EVENT */}
             <section className="best-event-section">
@@ -873,52 +1389,111 @@ function OrganizerDashboard({ onBack }) {
                             <div className="best-event-stats">
                                 <div>
                                     <span>Tickets Sold</span>
-                                    <strong>{bestPerformingEvent.ticketsSold}</strong>
+                                    <strong>
+                                        {bestPerformingEvent.ticketsSold}
+                                    </strong>
                                 </div>
 
                                 <div>
                                     <span>Revenue Earned</span>
-                                    <strong>Rs. {bestPerformingEvent.revenue}</strong>
+                                    <strong>
+                                        Rs. {bestPerformingEvent.revenue}
+                                    </strong>
                                 </div>
                             </div>
                         </div>
                     </div>
                 ) : (
-                    <p>No successful ticket sales yet. Your best-performing event will appear here.</p>
+                    <p>
+                        No successful ticket sales yet. Your best-performing
+                        event will appear here.
+                    </p>
                 )}
             </section>
 
-
+            {/* MY EVENTS */}
             <h2>My Events</h2>
 
             {events.length === 0 ? (
                 <p>You haven't created any events yet.</p>
             ) : (
                 <div className="event-grid">
-                    {events.map((event) => (
-                        <div className="event-card" key={event._id}>
-                            <h3>{event.title}</h3>
-                            <p>Type: {event.type}</p>
-                            <p>
-                                Date: {new Date(event.date).toLocaleString()}
-                            </p>
-                            <p>Location: {event.location}</p>
-                            <p>Price: Rs. {event.price}</p>
-                            <p>Available Seats: {event.availableSeats}</p>
-                            <button
-                                className="login-btn"
-                                onClick={() => handleEditClick(event)}
+                    {events.map(event => {
+                        const eventImages = Array.isArray(event.images)
+                            ? event.images
+                                .map(image =>
+                                    typeof image === 'string'
+                                        ? image
+                                        : image?.url
+                                )
+                                .filter(Boolean)
+                            : [];
+
+                        const coverImage =
+                            eventImages[0] || event.imageUrl;
+
+                        return (
+                            <div
+                                className="event-card"
+                                key={event._id}
                             >
-                                Edit Event
-                            </button>
-                            <button
-                                className="login-btn"
-                                onClick={() => handleDeleteEvent(event._id)}
-                            >
-                                Delete Event
-                            </button>
-                        </div>
-                    ))}
+                                {coverImage && (
+                                    <img
+                                        src={coverImage}
+                                        alt={event.title}
+                                        style={{
+                                            width: '100%',
+                                            maxHeight: '200px',
+                                            objectFit: 'cover',
+                                            borderRadius: '8px'
+                                        }}
+                                    />
+                                )}
+
+                                <h3>{event.title}</h3>
+
+                                <p>Type: {event.type}</p>
+
+                                <p>
+                                    Date: {new Date(
+                                        event.date
+                                    ).toLocaleString()}
+                                </p>
+
+                                <p>
+                                    Location: {event.location || event.venue || 'Not specified'}
+                                </p>
+
+                                {event.city && (
+                                    <p>City: {event.city}</p>
+                                )}
+
+                                {event.venue && (
+                                    <p>Venue: {event.venue}</p>
+                                )}
+
+                                <p>Price: Rs. {event.price}</p>
+
+                                <p>Available Seats: {event.availableSeats}</p>
+
+                                <p>Photos: {eventImages.length}</p>
+
+                                <button
+                                    className="login-btn"
+                                    onClick={() => handleEditClick(event)}
+                                >
+                                    Edit Event
+                                </button>
+
+                                <button
+                                    className="login-btn"
+                                    onClick={() => handleDeleteEvent(event._id)}
+                                >
+                                    Delete Event
+                                </button>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </div>

@@ -14,9 +14,13 @@ const allowedFields = [
     'date',
     'location',
     'city',
+    'province',
+    'country',
     'venue',
     'imageUrl',
+    'images',
     'coordinates',
+    'googlePlaceId',
     'bookingUrl',
     'price',
     'availableSeats'
@@ -34,6 +38,7 @@ const validCategories = [
     'Other'
 ];
 
+
 // VALIDATE EVENT DATA
 function validateEventData(body, isCreate = false) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -48,6 +53,7 @@ function validateEventData(body, isCreate = false) {
         return `Unsupported fields: ${unknownFields.join(', ')}`;
     }
 
+    // REQUIRED FIELDS FOR EVENT CREATION
     if (isCreate) {
         const requiredFields = [
             'title',
@@ -68,8 +74,21 @@ function validateEventData(body, isCreate = false) {
                 return `${field} is required.`;
             }
         }
+
+        if (
+            body.type === 'In-person' &&
+            (
+                typeof body.city !== 'string' ||
+                !body.city.trim() ||
+                typeof body.venue !== 'string' ||
+                !body.venue.trim()
+            )
+        ) {
+            return 'City and venue are required for in-person events.';
+        }
     }
 
+    // TITLE
     if (body.title !== undefined) {
         if (
             typeof body.title !== 'string' ||
@@ -80,6 +99,7 @@ function validateEventData(body, isCreate = false) {
         }
     }
 
+    // DESCRIPTION
     if (body.description !== undefined) {
         if (
             typeof body.description !== 'string' ||
@@ -90,6 +110,7 @@ function validateEventData(body, isCreate = false) {
         }
     }
 
+    // EVENT TYPE
     if (
         body.type !== undefined &&
         !['Online', 'In-person'].includes(body.type)
@@ -97,6 +118,7 @@ function validateEventData(body, isCreate = false) {
         return 'Event type must be Online or In-person.';
     }
 
+    // CATEGORY
     if (
         body.category !== undefined &&
         !validCategories.includes(body.category)
@@ -104,6 +126,7 @@ function validateEventData(body, isCreate = false) {
         return 'Invalid event category.';
     }
 
+    // EVENT DATE
     if (body.date !== undefined) {
         const parsedDate = new Date(body.date);
 
@@ -116,6 +139,7 @@ function validateEventData(body, isCreate = false) {
         }
     }
 
+    // LOCATION
     if (body.location !== undefined) {
         if (
             typeof body.location !== 'string' ||
@@ -126,6 +150,7 @@ function validateEventData(body, isCreate = false) {
         }
     }
 
+    // CITY
     if (body.city !== undefined) {
         if (
             typeof body.city !== 'string' ||
@@ -135,6 +160,31 @@ function validateEventData(body, isCreate = false) {
         }
     }
 
+    // PROVINCE
+    if (body.province !== undefined) {
+        if (
+            typeof body.province !== 'string' ||
+            body.province.trim().length > 80
+        ) {
+            return 'Province must be a valid text value.';
+        }
+    }
+
+    // COUNTRY
+    if (body.country !== undefined) {
+        if (
+            typeof body.country !== 'string' ||
+            body.country.trim().length > 80
+        ) {
+            return 'Country must be a valid text value.';
+        }
+
+        if (body.country.trim().toLowerCase() !== 'pakistan') {
+            return 'Only venues in Pakistan are supported.';
+        }
+    }
+
+    // VENUE
     if (body.venue !== undefined) {
         if (
             typeof body.venue !== 'string' ||
@@ -144,6 +194,17 @@ function validateEventData(body, isCreate = false) {
         }
     }
 
+    // GOOGLE PLACE ID
+    if (body.googlePlaceId !== undefined) {
+        if (
+            typeof body.googlePlaceId !== 'string' ||
+            body.googlePlaceId.trim().length > 200
+        ) {
+            return 'Google Place ID must be a valid text value.';
+        }
+    }
+
+    // PRICE
     if (body.price !== undefined) {
         if (
             typeof body.price !== 'number' ||
@@ -154,6 +215,7 @@ function validateEventData(body, isCreate = false) {
         }
     }
 
+    // AVAILABLE SEATS
     if (body.availableSeats !== undefined) {
         if (
             typeof body.availableSeats !== 'number' ||
@@ -164,6 +226,7 @@ function validateEventData(body, isCreate = false) {
         }
     }
 
+    // IMAGE AND BOOKING URL VALIDATION
     const urlFields = [
         'imageUrl',
         'bookingUrl'
@@ -185,6 +248,27 @@ function validateEventData(body, isCreate = false) {
         }
     }
 
+    // EVENT IMAGE GALLERY
+    if (body.images !== undefined) {
+        if (!Array.isArray(body.images)) {
+            return 'Event images must be provided as an array.';
+        }
+
+        if (body.images.length > 8) {
+            return 'You can upload a maximum of 8 event images.';
+        }
+
+        for (const image of body.images) {
+            if (
+                typeof image !== 'string' ||
+                !/^https?:\/\/.+/i.test(image.trim())
+            ) {
+                return 'Every event image must be a valid HTTP or HTTPS URL.';
+            }
+        }
+    }
+
+    // COORDINATES
     if (body.coordinates !== undefined) {
         const coordinates = body.coordinates;
 
@@ -262,14 +346,28 @@ router.post(
                 });
             }
 
-            const newEvent = new Event({
+            const eventData = {
                 ...req.body,
+
+                // Keep the existing primary image field compatible.
+                imageUrl:
+                    req.body.imageUrl ||
+                    (
+                        Array.isArray(req.body.images) &&
+                            req.body.images.length > 0
+                            ? req.body.images[0]
+                            : undefined
+                    ),
+
                 category: req.body.category || 'Other',
+                country: req.body.country || 'Pakistan',
                 organizer: req.user.userId,
                 eventSource: 'EventEase',
                 providerName: 'EventEase',
                 status: 'published'
-            });
+            };
+
+            const newEvent = new Event(eventData);
 
             const savedEvent = await newEvent.save();
 
@@ -410,6 +508,7 @@ router.put(
                 });
             }
 
+            // CHECK EVENT OWNERSHIP
             if (
                 !event.organizer ||
                 event.organizer.toString() !== req.user.userId
@@ -420,12 +519,55 @@ router.put(
                 });
             }
 
-            // UPDATES EVERY ALLOWED FIELD, INCLUDING CATEGORY
+            // PREVENT EMPTY CITY OR VENUE FOR IN-PERSON UPDATES
+            if (
+                event.type === 'In-person' ||
+                req.body.type === 'In-person'
+            ) {
+                if (
+                    req.body.city !== undefined &&
+                    !req.body.city.trim()
+                ) {
+                    return res.status(400).json({
+                        message: 'City cannot be empty for an in-person event.'
+                    });
+                }
+
+                if (
+                    req.body.venue !== undefined &&
+                    !req.body.venue.trim()
+                ) {
+                    return res.status(400).json({
+                        message: 'Venue cannot be empty for an in-person event.'
+                    });
+                }
+            }
+
+            // UPDATE ALL ALLOWED FIELDS
             allowedFields.forEach((field) => {
                 if (req.body[field] !== undefined) {
                     event[field] = req.body[field];
                 }
             });
+
+            // KEEP PRIMARY IMAGE FIELD IN SYNC WITH GALLERY
+            if (
+                req.body.images !== undefined &&
+                req.body.imageUrl === undefined
+            ) {
+                event.imageUrl =
+                    req.body.images.length > 0
+                        ? req.body.images[0]
+                        : '';
+            }
+
+            // DEFAULT COUNTRY
+            if (
+                req.body.country === undefined &&
+                !event.country
+            ) {
+                event.country = 'Pakistan';
+            }
 
             const updatedEvent = await event.save();
 

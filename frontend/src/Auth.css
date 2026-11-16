@@ -194,3 +194,48 @@
 .auth-submit:disabled:hover {
     background: #10b981;
 }
+/* EventEase premium light authentication modal */
+.auth-overlay {
+    background: rgba(25, 27, 61, .58) !important;
+    backdrop-filter: blur(9px);
+    padding: 18px;
+}
+.auth-card {
+    width: min(100%, 470px) !important;
+    padding: 38px clamp(22px, 5vw, 42px) !important;
+    color: #242541 !important;
+    background: #fff !important;
+    border: 1px solid rgba(255,255,255,.8) !important;
+    border-radius: 22px !important;
+    box-shadow: 0 28px 90px rgba(16,18,58,.28) !important;
+}
+.auth-card h1 { color: #242541 !important; font-size: 29px; font-weight: 850; letter-spacing: -1px; }
+.auth-card h1 span { color: #5b5ce2 !important; }
+.auth-card h2 { color: #292a49; font-weight: 800; }
+.auth-card > p { color: #777990 !important; }
+.auth-card form { gap: 13px; }
+.auth-card input, .auth-card select {
+    min-height: 48px; padding: 12px 14px !important; color: #292a49 !important;
+    background: #fafaff !important; border: 1px solid #e4e5f0 !important;
+    border-radius: 11px !important; outline: none;
+}
+.auth-card input::placeholder { color: #a1a3b5; }
+.auth-card input:focus, .auth-card select:focus {
+    border-color: #7778ec !important; box-shadow: 0 0 0 4px rgba(91,92,226,.12) !important;
+}
+.auth-submit {
+    min-height: 48px; margin-top: 5px !important; color: white !important;
+    background: linear-gradient(135deg, #5556d8, #7775ee) !important;
+    border: 0 !important; border-radius: 11px !important;
+    box-shadow: 0 8px 18px rgba(91,92,226,.22);
+}
+.auth-submit:hover { background: #494acb !important; }
+.auth-close { color: #6e7088 !important; border-radius: 9px !important; }
+.auth-close:hover { color: #4e4fc9 !important; background: #f0f0ff !important; }
+.auth-card .auth-message { padding: 10px 12px; color: #a65d22 !important; background: #fff7ed; border-radius: 9px; }
+.auth-switch { color: #777990 !important; }
+.auth-switch button { color: #5556d8 !important; font-weight: 750; }
+.auth-card button:focus-visible { outline-color: rgba(91,92,226,.4) !important; }
+@media (max-width: 480px) {
+    .auth-card { padding: 30px 21px !important; border-radius: 18px !important; }
+}

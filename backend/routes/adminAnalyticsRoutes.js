@@ -1,3 +1,4 @@
+
 const express = require('express');
 
 const User = require('../models/User');
@@ -24,10 +25,30 @@ router.get(
                 categoryBreakdown,
                 bookingStatuses
             ] = await Promise.all([
+
+                // Count each role independently.
                 User.aggregate([
                     {
+                        $project: {
+                            effectiveRoles: {
+                                $cond: [
+                                    { $isArray: '$roles' },
+                                    '$roles',
+                                    {
+                                        $cond: [
+                                            { $eq: ['$role', 'organizer'] },
+                                            ['customer', 'organizer'],
+                                            ['$role']
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    { $unwind: '$effectiveRoles' },
+                    {
                         $group: {
-                            _id: '$role',
+                            _id: '$effectiveRoles',
                             count: { $sum: 1 }
                         }
                     }
@@ -199,10 +220,8 @@ router.get(
                 success: true,
 
                 summary: {
-                    totalUsers: userCounts.reduce(
-                        (total, item) => total + item.count,
-                        0
-                    ),
+                    totalUsers: await User.countDocuments(),
+
                     totalCustomers: getRoleCount('customer'),
                     totalOrganizers: getRoleCount('organizer'),
                     totalAdmins: getRoleCount('admin'),
@@ -238,9 +257,12 @@ router.get(
                     count: item.count
                 }))
             });
+
         } catch (error) {
             console.error('Admin analytics error:', error);
+
             res.status(500).json({
+                success: false,
                 message: 'Unable to load admin analytics.'
             });
         }

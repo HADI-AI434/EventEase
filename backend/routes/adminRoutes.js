@@ -10,6 +10,19 @@ const roleMiddleware = require('../middleware/roleMiddleware');
 
 const router = express.Router();
 
+// Support both multi-role and legacy accounts.
+function getUserRoles(user) {
+    if (Array.isArray(user.roles)) {
+        return user.roles;
+    }
+
+    if (user.role === 'organizer') {
+        return ['customer', 'organizer'];
+    }
+
+    return user.role ? [user.role] : [];
+}
+
 // ADMIN DASHBOARD API
 router.get(
     '/dashboard',
@@ -17,35 +30,35 @@ router.get(
     roleMiddleware('admin'),
     async (req, res) => {
         try {
-            // Fetch all users without exposing passwords
+            // Fetch users without exposing passwords.
             const users = await User.find()
                 .select('-password')
                 .sort({ createdAt: -1 });
 
-            // Fetch all events
+            // Fetch all events.
             const events = await Event.find()
                 .populate('organizer', 'name email')
                 .sort({ createdAt: -1 });
 
-            // Fetch all bookings
+            // Fetch all bookings.
             const bookings = await Booking.find()
                 .populate('customer', 'name email')
                 .populate('event', 'title')
                 .sort({ createdAt: -1 });
 
-            // USER STATISTICS
+            // MULTI-ROLE USER STATISTICS
             const totalUsers = users.length;
 
-            const totalCustomers = users.filter(
-                user => user.role === 'customer'
+            const totalCustomers = users.filter(user =>
+                getUserRoles(user).includes('customer')
             ).length;
 
-            const totalOrganizers = users.filter(
-                user => user.role === 'organizer'
+            const totalOrganizers = users.filter(user =>
+                getUserRoles(user).includes('organizer')
             ).length;
 
-            const totalAdmins = users.filter(
-                user => user.role === 'admin'
+            const totalAdmins = users.filter(user =>
+                getUserRoles(user).includes('admin')
             ).length;
 
             // EVENT STATISTICS
@@ -64,17 +77,20 @@ router.get(
             );
 
             const totalTicketsSold = successfulBookings.reduce(
-                (total, booking) => total + (booking.quantity || 0),
+                (total, booking) =>
+                    total + (booking.quantity || 0),
                 0
             );
 
             const totalRevenue = successfulBookings.reduce(
-                (total, booking) => total + (booking.totalAmount || 0),
+                (total, booking) =>
+                    total + (booking.totalAmount || 0),
                 0
             );
 
             // SEND ADMIN DASHBOARD DATA
             res.json({
+                success: true,
                 message: 'Admin dashboard data retrieved successfully.',
 
                 statistics: {
@@ -99,6 +115,7 @@ router.get(
             console.error('Admin dashboard error:', error);
 
             res.status(500).json({
+                success: false,
                 message: 'Failed to load admin dashboard.'
             });
         }

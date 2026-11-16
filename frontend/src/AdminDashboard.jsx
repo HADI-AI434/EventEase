@@ -1,3 +1,4 @@
+
 import { API_BASE_URL } from './api';
 import { useEffect, useState } from 'react';
 
@@ -30,6 +31,37 @@ const CHART_COLORS = [
     '#84cc16'
 ];
 
+// NORMALIZE USER ROLES
+function getUserRoles(user) {
+    if (
+        Array.isArray(user?.roles) &&
+        user.roles.includes('admin')
+    ) {
+        return ['admin'];
+    }
+
+    if (
+        Array.isArray(user?.roles) &&
+        user.roles.includes('organizer')
+    ) {
+        return ['customer', 'organizer'];
+    }
+
+    if (Array.isArray(user?.roles) && user.roles.length > 0) {
+        return user.roles;
+    }
+
+    if (user?.role === 'admin') {
+        return ['admin'];
+    }
+
+    if (user?.role === 'organizer') {
+        return ['customer', 'organizer'];
+    }
+
+    return ['customer'];
+}
+
 function formatMonth(month) {
     if (!month) return '';
 
@@ -58,15 +90,29 @@ function AdminDashboard({ onBack }) {
     const [error, setError] = useState('');
     const [analyticsError, setAnalyticsError] = useState('');
 
+    // ADMIN PROMOTION STATES
+    const [promotingUserId, setPromotingUserId] = useState(null);
+    const [promotionMessage, setPromotionMessage] = useState('');
+    const [promotionError, setPromotionError] = useState('');
+
+    // GET CURRENT AUTHENTICATED USER
+    function getSavedUser() {
+        try {
+            return JSON.parse(
+                localStorage.getItem('eventeaseUser')
+            );
+        } catch {
+            return null;
+        }
+    }
+
     // FETCH EXISTING ADMIN DASHBOARD
     async function fetchAdminDashboard() {
         setLoading(true);
         setError('');
 
         try {
-            const savedUser = JSON.parse(
-                localStorage.getItem('eventeaseUser')
-            );
+            const savedUser = getSavedUser();
 
             if (!savedUser?.token) {
                 throw new Error('Please log in first.');
@@ -104,9 +150,7 @@ function AdminDashboard({ onBack }) {
         setAnalyticsError('');
 
         try {
-            const savedUser = JSON.parse(
-                localStorage.getItem('eventeaseUser')
-            );
+            const savedUser = getSavedUser();
 
             if (!savedUser?.token) {
                 throw new Error('Please log in first.');
@@ -138,12 +182,95 @@ function AdminDashboard({ onBack }) {
         }
     }
 
-    // REFRESH BOTH DASHBOARD AND ANALYTICS
+    // REFRESH DASHBOARD AND ANALYTICS
     async function refreshAllData() {
         await Promise.all([
             fetchAdminDashboard(),
             fetchAdminAnalytics()
         ]);
+    }
+
+    // PROMOTE AN EXISTING USER TO ADMIN
+    async function promoteUser(user) {
+        const userRoles = getUserRoles(user);
+
+        if (userRoles.includes('admin')) {
+            return;
+        }
+
+        const savedUser = getSavedUser();
+
+        if (!savedUser?.token) {
+            setPromotionError('Please log in again.');
+            return;
+        }
+
+        const targetUserId = String(user._id || user.id || '');
+
+        if (!targetUserId) {
+            setPromotionError('User ID is missing.');
+            return;
+        }
+
+        const currentUserId = String(
+            savedUser.user?.id ||
+            savedUser.user?._id ||
+            ''
+        );
+
+        if (currentUserId && targetUserId === currentUserId) {
+            setPromotionError('You cannot promote yourself.');
+            return;
+        }
+
+        const confirmed = window.confirm(
+            `Are you sure you want to promote ${user.name} to Administrator?\n\n` +
+            'This will replace their Customer and Organizer permissions with Admin permissions.'
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        setPromotingUserId(targetUserId);
+        setPromotionMessage('');
+        setPromotionError('');
+
+        try {
+            const response = await fetch(
+                `${API_BASE_URL}/api/auth/promote-to-admin`,
+                {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${savedUser.token}`
+                    },
+                    body: JSON.stringify({
+                        targetUserId
+                    })
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    data.message || 'Unable to promote this user.'
+                );
+            }
+
+            setPromotionMessage(
+                `${user.name} has successfully been promoted to Administrator.`
+            );
+
+            // Refresh the user table and statistics.
+            await fetchAdminDashboard();
+
+        } catch (err) {
+            setPromotionError(err.message);
+        } finally {
+            setPromotingUserId(null);
+        }
     }
 
     useEffect(() => {
@@ -189,7 +316,6 @@ function AdminDashboard({ onBack }) {
     }
 
     const stats = dashboard.statistics || {};
-
     const summary = analytics?.summary || {};
 
     const monthlyBookings = (
@@ -207,13 +333,20 @@ function AdminDashboard({ onBack }) {
     }));
 
     const categoryData = analytics?.categoryBreakdown || [];
-
     const bookingStatusData = analytics?.bookingStatuses || [];
 
     const hasMonthlyBookings = monthlyBookings.length > 0;
     const hasMonthlyUsers = monthlyUsers.length > 0;
     const hasCategories = categoryData.length > 0;
     const hasBookingStatuses = bookingStatusData.length > 0;
+
+    const savedUser = getSavedUser();
+
+    const currentUserId = String(
+        savedUser?.user?.id ||
+        savedUser?.user?._id ||
+        ''
+    );
 
     return (
         <div className="admin-dashboard">
@@ -544,7 +677,6 @@ function AdminDashboard({ onBack }) {
                                                 </Pie>
 
                                                 <Tooltip />
-
                                                 <Legend />
                                             </PieChart>
                                         </ResponsiveContainer>
@@ -581,7 +713,6 @@ function AdminDashboard({ onBack }) {
                                                 </Pie>
 
                                                 <Tooltip />
-
                                                 <Legend />
                                             </PieChart>
                                         </ResponsiveContainer>
@@ -596,9 +727,32 @@ function AdminDashboard({ onBack }) {
                 )}
             </section>
 
-            {/* ALL USERS */}
+            {/* ALL USERS AND ADMIN MANAGEMENT */}
             <section className="admin-section">
                 <h2>Registered Users</h2>
+
+                <p>
+                    Manage registered accounts and promote eligible users
+                    to Administrator.
+                </p>
+
+                {promotionMessage && (
+                    <div
+                        className="admin-success"
+                        role="status"
+                    >
+                        {promotionMessage}
+                    </div>
+                )}
+
+                {promotionError && (
+                    <div
+                        className="admin-error"
+                        role="alert"
+                    >
+                        {promotionError}
+                    </div>
+                )}
 
                 <div className="admin-table-wrapper">
                     <table className="admin-table">
@@ -607,27 +761,88 @@ function AdminDashboard({ onBack }) {
                                 <th>Name</th>
                                 <th>Email</th>
                                 <th>Role</th>
+                                <th>Admin Management</th>
                             </tr>
                         </thead>
 
                         <tbody>
-                            {(dashboard.users || []).map(user => (
-                                <tr key={user._id}>
-                                    <td>{user.name}</td>
-                                    <td>{user.email}</td>
-                                    <td>
-                                        <span className={`admin-role ${user.role}`}>
-                                            {user.role}
-                                        </span>
-                                    </td>
-                                </tr>
-                            ))}
+                            {(dashboard.users || []).map(user => {
+                                const userRoles = getUserRoles(user);
 
-                            {(!dashboard.users || dashboard.users.length === 0) && (
-                                <tr>
-                                    <td colSpan="3">No users found.</td>
-                                </tr>
-                            )}
+                                const isAdmin = userRoles.includes('admin');
+
+                                const userId = String(
+                                    user._id || user.id || ''
+                                );
+
+                                const isCurrentUser =
+                                    currentUserId &&
+                                    userId === currentUserId;
+
+                                const isPromoting =
+                                    promotingUserId === userId;
+
+                                return (
+                                    <tr key={userId || user.email}>
+                                        <td>{user.name}</td>
+
+                                        <td>{user.email}</td>
+
+                                        <td>
+                                            <div>
+                                                {userRoles.map(role => (
+                                                    <span
+                                                        key={role}
+                                                        className={`admin-role ${role}`}
+                                                        style={{
+                                                            display: 'inline-block',
+                                                            marginRight: '5px'
+                                                        }}
+                                                    >
+                                                        {role}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </td>
+
+                                        <td>
+                                            {isAdmin ? (
+                                                <span>
+                                                    Administrator
+                                                </span>
+                                            ) : isCurrentUser ? (
+                                                <span>
+                                                    Current account
+                                                </span>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    disabled={
+                                                        isPromoting ||
+                                                        Boolean(promotingUserId)
+                                                    }
+                                                    onClick={() =>
+                                                        promoteUser(user)
+                                                    }
+                                                >
+                                                    {isPromoting
+                                                        ? 'Promoting...'
+                                                        : 'Promote to Admin'}
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+
+                            {(!dashboard.users ||
+                                dashboard.users.length === 0) && (
+                                    <tr>
+                                        <td colSpan="4">
+                                            No users found.
+                                        </td>
+                                    </tr>
+                                )}
                         </tbody>
                     </table>
                 </div>
@@ -651,18 +866,25 @@ function AdminDashboard({ onBack }) {
                             {(dashboard.events || []).map(event => (
                                 <tr key={event._id}>
                                     <td>{event.title}</td>
+
                                     <td>
                                         {event.organizer?.name || 'Unknown'}
                                     </td>
-                                    <td>{event.availableSeats ?? 0}</td>
+
+                                    <td>
+                                        {event.availableSeats ?? 0}
+                                    </td>
                                 </tr>
                             ))}
 
-                            {(!dashboard.events || dashboard.events.length === 0) && (
-                                <tr>
-                                    <td colSpan="3">No events found.</td>
-                                </tr>
-                            )}
+                            {(!dashboard.events ||
+                                dashboard.events.length === 0) && (
+                                    <tr>
+                                        <td colSpan="3">
+                                            No events found.
+                                        </td>
+                                    </tr>
+                                )}
                         </tbody>
                     </table>
                 </div>
@@ -697,21 +919,30 @@ function AdminDashboard({ onBack }) {
 
                                     <td>{booking.quantity}</td>
 
-                                    <td>{formatCurrency(booking.totalAmount)}</td>
+                                    <td>
+                                        {formatCurrency(booking.totalAmount)}
+                                    </td>
 
                                     <td>
-                                        <span className={`admin-booking-status ${String(booking.status).toLowerCase()}`}>
+                                        <span
+                                            className={`admin-booking-status ${String(
+                                                booking.status
+                                            ).toLowerCase()}`}
+                                        >
                                             {booking.status}
                                         </span>
                                     </td>
                                 </tr>
                             ))}
 
-                            {(!dashboard.bookings || dashboard.bookings.length === 0) && (
-                                <tr>
-                                    <td colSpan="5">No bookings found.</td>
-                                </tr>
-                            )}
+                            {(!dashboard.bookings ||
+                                dashboard.bookings.length === 0) && (
+                                    <tr>
+                                        <td colSpan="5">
+                                            No bookings found.
+                                        </td>
+                                    </tr>
+                                )}
                         </tbody>
                     </table>
                 </div>

@@ -13,15 +13,21 @@ const adminRoutes = require('./routes/adminRoutes');
 const recommendationRoutes = require('./routes/recommendationRoutes');
 const customerAnalyticsRoutes = require('./routes/customerAnalyticsRoutes');
 const adminAnalyticsRoutes = require('./routes/adminAnalyticsRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
 
 const app = express();
+
+const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI;
+
+// DATABASE CONFIGURATION
 console.log(
     'MongoDB URI configured:',
     MONGODB_URI ? 'YES' : 'NO',
     'Atlas:',
     MONGODB_URI?.startsWith('mongodb+srv://') ? 'YES' : 'NO'
 );
+
 if (!MONGODB_URI) {
     throw new Error('MONGODB_URI environment variable is missing.');
 }
@@ -48,7 +54,7 @@ app.use(cors({
 // REQUEST BODY LIMIT
 app.use(express.json({ limit: '1mb' }));
 
-// CONNECT TO MONGODB BEFORE HANDLING API REQUESTS
+// DATABASE CONNECTION MANAGEMENT
 let dbConnectionPromise;
 
 async function connectToDatabase(req, res, next) {
@@ -66,12 +72,14 @@ async function connectToDatabase(req, res, next) {
         }
 
         next();
+
     } catch (error) {
         console.error('MongoDB connection failed:', error.message);
         next(error);
     }
 }
 
+// CONNECT TO DATABASE BEFORE API REQUESTS
 app.use(connectToDatabase);
 
 // API ROUTES
@@ -83,6 +91,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/recommendations', recommendationRoutes);
 app.use('/api/analytics/customer', customerAnalyticsRoutes);
 app.use('/api/admin/analytics', adminAnalyticsRoutes);
+app.use('/api/uploads', uploadRoutes);
 
 // HOME ROUTE
 app.get('/', (req, res) => {
@@ -133,6 +142,14 @@ app.use((error, req, res, next) => {
         message: 'Internal server error.'
     });
 });
+
+// LOCAL SERVER STARTUP
+// Vercel imports the app without starting another server.
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`EventEase backend running on port ${PORT}`);
+    });
+}
 
 // EXPORT EXPRESS APP FOR VERCEL
 module.exports = app;

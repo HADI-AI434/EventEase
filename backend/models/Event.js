@@ -1,3 +1,4 @@
+
 const mongoose = require('mongoose');
 
 const coordinatesSchema = new mongoose.Schema(
@@ -76,23 +77,57 @@ const eventSchema = new mongoose.Schema(
             maxlength: 80
         },
 
+        province: {
+            type: String,
+            trim: true,
+            maxlength: 80,
+            default: ''
+        },
+
+        country: {
+            type: String,
+            trim: true,
+            maxlength: 80,
+            default: 'Pakistan'
+        },
+
         venue: {
             type: String,
             trim: true,
             maxlength: 150
         },
 
-        // EVENT IMAGE
+        // PRIMARY EVENT IMAGE (LEGACY COMPATIBILITY)
         imageUrl: {
             type: String,
             trim: true,
             default: '',
             validate: {
                 validator: function (value) {
-                    return !value ||
-                        /^https?:\/\/.+/i.test(value);
+                    return !value || /^https?:\/\/.+/i.test(value);
                 },
                 message: 'Image URL must start with http:// or https://.'
+            }
+        },
+
+        // MULTIPLE EVENT IMAGES
+        images: {
+            type: [{
+                type: String,
+                trim: true,
+                validate: {
+                    validator: function (value) {
+                        return /^https?:\/\/.+/i.test(value);
+                    },
+                    message: 'Every event image must have a valid HTTP or HTTPS URL.'
+                }
+            }],
+            default: [],
+            validate: {
+                validator: function (images) {
+                    return images.length <= 8;
+                },
+                message: 'An event can have a maximum of 8 images.'
             }
         },
 
@@ -102,6 +137,13 @@ const eventSchema = new mongoose.Schema(
             default: undefined
         },
 
+        // GOOGLE PLACES IDENTIFIER
+        googlePlaceId: {
+            type: String,
+            trim: true,
+            default: ''
+        },
+
         // EXTERNAL BOOKING LINK
         bookingUrl: {
             type: String,
@@ -109,8 +151,7 @@ const eventSchema = new mongoose.Schema(
             default: '',
             validate: {
                 validator: function (value) {
-                    return !value ||
-                        /^https?:\/\/.+/i.test(value);
+                    return !value || /^https?:\/\/.+/i.test(value);
                 },
                 message: 'Booking URL must start with http:// or https://.'
             }
@@ -135,8 +176,7 @@ const eventSchema = new mongoose.Schema(
             default: '',
             validate: {
                 validator: function (value) {
-                    return !value ||
-                        /^https?:\/\/.+/i.test(value);
+                    return !value || /^https?:\/\/.+/i.test(value);
                 },
                 message: 'Source URL must start with http:// or https://.'
             }
@@ -166,8 +206,6 @@ const eventSchema = new mongoose.Schema(
             trim: true,
             default: undefined
         },
-
-
 
         // LAST VERIFICATION DATE
         lastVerifiedAt: {
@@ -239,6 +277,22 @@ eventSchema.pre('validate', function () {
             this.invalidate(
                 'coordinates',
                 'Both latitude and longitude are required.'
+            );
+        }
+    }
+
+    if (this.type === 'In-person') {
+        if (!this.city) {
+            this.invalidate(
+                'city',
+                'City is required for in-person events.'
+            );
+        }
+
+        if (!this.venue) {
+            this.invalidate(
+                'venue',
+                'Venue is required for in-person events.'
             );
         }
     }

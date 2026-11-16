@@ -1,3 +1,4 @@
+
 import ResetPassword from './ResetPassword';
 import { API_BASE_URL } from './api';
 import { useState, useEffect, useRef } from 'react';
@@ -36,6 +37,20 @@ const EVENT_CATEGORIES = [
   'Community',
   'Other'
 ];
+
+// GET ALL ROLES ASSIGNED TO A USER
+function getUserRoles(user) {
+  if (Array.isArray(user?.roles)) {
+    return user.roles;
+  }
+
+  // Backward compatibility with older accounts
+  if (user?.role === 'organizer') {
+    return ['customer', 'organizer'];
+  }
+
+  return user?.role ? [user.role] : [];
+}
 
 // CHECK WHETHER AN EVENT IS EXTERNAL
 function isExternalEvent(event) {
@@ -87,22 +102,45 @@ function eventMatchesCity(event, selectedCity) {
 }
 
 // GENERATE GOOGLE MAPS SEARCH URL
+
 function getMapUrl(event) {
-  const destination =
-    event.coordinates?.latitude != null &&
-      event.coordinates?.longitude != null
-      ? `${event.coordinates.latitude},${event.coordinates.longitude}`
-      : [
-        event.venue,
-        event.location,
-        event.city,
-        'Pakistan'
-      ].filter(Boolean).join(', ');
+  if (!event) return null;
+
+  const latitude = event.coordinates?.latitude;
+  const longitude = event.coordinates?.longitude;
+
+  const hasCoordinates =
+    typeof latitude === 'number' &&
+    typeof longitude === 'number' &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    longitude >= -180 &&
+    longitude <= 180;
+
+  const destination = hasCoordinates
+    ? `${latitude},${longitude}`
+    : [
+      event.venue,
+      event.location,
+      event.city,
+      event.province,
+      event.country || 'Pakistan'
+    ].filter(Boolean).join(', ');
 
   if (!destination.trim()) return null;
 
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`;
+  const params = new URLSearchParams({
+    api: '1',
+    query: destination
+  });
+
+  if (event.googlePlaceId) {
+    params.set('query_place_id', event.googlePlaceId);
+  }
+
+  return `https://www.google.com/maps/search/?${params.toString()}`;
 }
+
 
 // CALCULATE DISTANCE BETWEEN TWO COORDINATES
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -172,20 +210,47 @@ function getEventPrice(event) {
 }
 
 // REUSABLE EVENT IMAGE COMPONENT
+
 function EventImage({ event, large = false }) {
+  const [activeImage, setActiveImage] = useState(0);
+
   const fallbackIcon =
     event.icon || (event.type === 'Online' ? '💻' : '🎉');
 
+  const uploadedImages = Array.isArray(event.images)
+    ? event.images
+      .map(image =>
+        typeof image === 'string' ? image : image?.url
+      )
+      .filter(Boolean)
+    : [];
+
+  // Backward compatibility with events using imageUrl
+  const allImages = uploadedImages.length > 0
+    ? uploadedImages
+    : event.imageUrl
+      ? [event.imageUrl]
+      : [];
+
+  const currentImage = allImages[activeImage] || null;
+
+  useEffect(() => {
+    setActiveImage(0);
+  }, [event._id]);
+
   return (
-    <div className={`event-image ${large ? 'event-image-large' : ''}`}>
+    <div
+      className={`event-image ${large ? 'event-image-large event-gallery' : ''}`}
+    >
       <div className="event-image-fallback">
         <span>{fallbackIcon}</span>
       </div>
 
-      {event.imageUrl && (
+      {currentImage && (
         <img
-          src={event.imageUrl}
-          alt={event.title || 'Event'}
+          key={currentImage}
+          src={currentImage}
+          alt={`${event.title || 'Event'} photo ${activeImage + 1}`}
           loading="lazy"
           onError={e => {
             e.currentTarget.style.display = 'none';
@@ -198,9 +263,41 @@ function EventImage({ event, large = false }) {
           {event.category}
         </span>
       )}
+
+      {large && allImages.length > 1 && (
+        <>
+          <span className="event-gallery-count">
+            Photo {activeImage + 1} of {allImages.length}
+          </span>
+
+          <div className="event-gallery-thumbnails">
+            {allImages.map((image, index) => (
+              <button
+                type="button"
+                key={`${image}-${index}`}
+                className={
+                  activeImage === index
+                    ? 'event-gallery-thumbnail active'
+                    : 'event-gallery-thumbnail'
+                }
+                onClick={() => setActiveImage(index)}
+                aria-label={`View event photo ${index + 1}`}
+                aria-pressed={activeImage === index}
+              >
+                <img
+                  src={image}
+                  alt={`Event thumbnail ${index + 1}`}
+                  loading="lazy"
+                />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
+
 
 function App() {
   const [filter, setFilter] = useState('All');
@@ -217,6 +314,10 @@ function App() {
 
   // AUTHENTICATION
   const [showAuth, setShowAuth] = useState(false);
+
+  // ORGANIZER UPGRADE
+  const [organizerUpgradeLoading, setOrganizerUpgradeLoading] = useState(false);
+  const [organizerUpgradeMessage, setOrganizerUpgradeMessage] = useState('');
 
   // BOOKING
   const [idempotencyKey, setIdempotencyKey] = useState(null);
@@ -259,14 +360,108 @@ function App() {
     }
   });
 
+  // CHECK USER PERMISSIONS
+  const userRoles = getUserRoles(currentUser?.user);
+
+  const hasCustomerRole = userRoles.includes('customer');
+  const hasOrganizerRole = userRoles.includes('organizer');
+  const hasAdminRole = userRoles.includes('admin');
+
   // PROFILE
   const [profile, setProfile] = useState(null);
   const [profileMessage, setProfileMessage] = useState('');
+
   // SMART EVENT RECOMMENDATIONS
   const [recommendations, setRecommendations] = useState([]);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [recommendationsError, setRecommendationsError] = useState('');
   const [recommendationsRefresh, setRecommendationsRefresh] = useState(0);
+
+  // UPGRADE CUSTOMER ACCOUNT TO ORGANIZER
+  async function handleBecomeOrganizer() {
+    if (!currentUser?.token) {
+      setOrganizerUpgradeMessage('Please log in first.');
+      return;
+    }
+
+    if (hasOrganizerRole) {
+      setOrganizerUpgradeMessage(
+        'Your account already has Organizer access.'
+      );
+      return;
+    }
+
+    if (!hasCustomerRole || hasAdminRole) {
+      setOrganizerUpgradeMessage(
+        'This account cannot be upgraded to Organizer.'
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Would you like to upgrade your account to Organizer? You will keep your Customer permissions and will also be able to create and manage events.'
+    );
+
+    if (!confirmed) return;
+
+    setOrganizerUpgradeLoading(true);
+    setOrganizerUpgradeMessage('');
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/auth/become-organizer`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${currentUser.token}`
+          }
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || 'Unable to upgrade your account.'
+        );
+      }
+
+      if (!data.token || !data.user) {
+        throw new Error(
+          'The server did not return the updated login session.'
+        );
+      }
+
+      // SAVE THE NEW TOKEN AND UPDATED USER INFORMATION
+      const updatedUserData = {
+        token: data.token,
+        user: data.user
+      };
+
+      localStorage.setItem(
+        'eventeaseUser',
+        JSON.stringify(updatedUserData)
+      );
+
+      setCurrentUser(updatedUserData);
+
+      // CLOSE OTHER SECTIONS AND OPEN ORGANIZER DASHBOARD
+      setShowMyBookings(false);
+      setShowAdminDashboard(false);
+      setShowOrganizerDashboard(true);
+      setSelectedEvent(null);
+      setProfile(null);
+      setOrganizerUpgradeMessage(
+        'Congratulations! Your account is now an Organizer.'
+      );
+
+    } catch (error) {
+      setOrganizerUpgradeMessage(error.message);
+
+    } finally {
+      setOrganizerUpgradeLoading(false);
+    }
+  }
 
   // LOGOUT
   function handleLogout() {
@@ -275,6 +470,7 @@ function App() {
     setCurrentUser(null);
     setProfile(null);
     setProfileMessage('');
+    setOrganizerUpgradeMessage('');
 
     setShowOrganizerDashboard(false);
     setSelectedEvent(null);
@@ -288,8 +484,8 @@ function App() {
 
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/auth/profile`
-        , {
+        `${API_BASE_URL}/api/auth/profile`,
+        {
           method: 'GET',
           cache: 'no-store',
           headers: {
@@ -355,10 +551,9 @@ function App() {
   // FETCH PERSONALIZED RECOMMENDATIONS
   useEffect(() => {
     const token = currentUser?.token;
-    const role = currentUser?.user?.role;
 
-    // Recommendations are only for customers.
-    if (!token || role !== 'customer') {
+    // Recommendations are for users with Customer access.
+    if (!token || !hasCustomerRole) {
       setRecommendations([]);
       setRecommendationsError('');
       setRecommendationsLoading(false);
@@ -417,7 +612,7 @@ function App() {
       isActive = false;
     };
 
-  }, [currentUser, recommendationsRefresh]);
+  }, [currentUser, recommendationsRefresh, hasCustomerRole]);
 
   // LOCATION-BASED DISCOVERY
   function findNearbyEvents() {
@@ -560,9 +755,9 @@ function App() {
       return;
     }
 
-    if (!currentUser || currentUser.user.role !== 'customer') {
+    if (!currentUser || !hasCustomerRole) {
       setBookingMessage(
-        'Please log in with a customer account to book tickets.'
+        'Please log in with a customer-enabled account to book tickets.'
       );
       return;
     }
@@ -642,7 +837,7 @@ function App() {
 
   // FETCH CUSTOMER BOOKINGS
   async function fetchMyBookings() {
-    if (!currentUser || currentUser.user.role !== 'customer') {
+    if (!currentUser || !hasCustomerRole) {
       return;
     }
 
@@ -747,50 +942,131 @@ function App() {
               <p>You haven't booked any tickets yet.</p>
             )}
 
-          {!bookingsLoading && myBookings.map(booking => (
-            <div className="booking-card" key={booking._id}>
-              <h3>{booking.event?.title || 'Event unavailable'}</h3>
 
-              <p>
-                Date: {booking.event?.date
-                  ? new Date(booking.event.date).toLocaleDateString()
-                  : 'N/A'}
-              </p>
+          {!bookingsLoading && myBookings.map(booking => {
+            const event = booking.event;
 
-              <p>Tickets: {booking.quantity}</p>
-              <p>Total Amount: Rs. {booking.totalAmount}</p>
-              <p>Booking Reference: {booking.bookingReference}</p>
-              <p>Status: {booking.status}</p>
+            const bookingMapUrl =
+              event?.type === 'In-person'
+                ? getMapUrl(event)
+                : null;
 
-              {booking.status === 'Confirmed' && (
-                <button
-                  onClick={() => {
-                    setSelectedBooking(booking);
+            return (
+              <div className="booking-card" key={booking._id}>
+                <h3>{event?.title || 'Event unavailable'}</h3>
 
-                    setTimeout(() => {
-                      ticketRef.current?.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start'
-                      });
-                    }, 100);
-                  }}
-                >
-                  View Ticket
-                </button>
-              )}
+                <p>
+                  <strong>Date:</strong>{' '}
+                  {event?.date
+                    ? new Date(event.date).toLocaleDateString('en-GB')
+                    : 'N/A'}
+                </p>
 
-              {booking.status === 'Confirmed' && (
-                <button
-                  onClick={() => handleCancelBooking(booking._id)}
-                  disabled={cancellingBookingId === booking._id}
-                >
-                  {cancellingBookingId === booking._id
-                    ? 'Cancelling...'
-                    : 'Cancel Booking'}
-                </button>
-              )}
-            </div>
-          ))}
+                {/* VENUE INFORMATION */}
+                {event?.type === 'In-person' && (
+                  <div className="booking-venue-information">
+                    <h4>📍 Venue Information</h4>
+
+                    {event.venue && (
+                      <p>
+                        <strong>Venue:</strong> {event.venue}
+                      </p>
+                    )}
+
+                    {event.location && (
+                      <p>
+                        <strong>Full Address:</strong>{' '}
+                        {event.location}
+                      </p>
+                    )}
+
+                    {event.city && (
+                      <p>
+                        <strong>City:</strong> {event.city}
+                      </p>
+                    )}
+
+                    {event.province && (
+                      <p>
+                        <strong>Province:</strong> {event.province}
+                      </p>
+                    )}
+
+                    <p>
+                      <strong>Country:</strong>{' '}
+                      {event.country || 'Pakistan'}
+                    </p>
+
+                    {bookingMapUrl && (
+                      <a
+                        className="map-link"
+                        href={bookingMapUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        📍 Open Venue in Google Maps ↗
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {/* ONLINE EVENT LOCATION */}
+                {event?.type === 'Online' && (
+                  <p>
+                    <strong>Online Location:</strong>{' '}
+                    {event.location || 'Online'}
+                  </p>
+                )}
+
+                <p>
+                  <strong>Tickets:</strong> {booking.quantity}
+                </p>
+
+                <p>
+                  <strong>Total Amount:</strong>{' '}
+                  Rs. {Number(booking.totalAmount || 0).toLocaleString()}
+                </p>
+
+                <p>
+                  <strong>Booking Reference:</strong>{' '}
+                  {booking.bookingReference}
+                </p>
+
+                <p>
+                  <strong>Status:</strong> {booking.status}
+                </p>
+
+                {booking.status === 'Confirmed' && (
+                  <button
+                    onClick={() => {
+                      setSelectedBooking(booking);
+
+                      setTimeout(() => {
+                        ticketRef.current?.scrollIntoView({
+                          behavior: 'smooth',
+                          block: 'start'
+                        });
+                      }, 100);
+                    }}
+                  >
+                    View Ticket
+                  </button>
+                )}
+
+                {booking.status === 'Confirmed' && (
+                  <button
+                    onClick={() => handleCancelBooking(booking._id)}
+                    disabled={cancellingBookingId === booking._id}
+                  >
+                    {cancellingBookingId === booking._id
+                      ? 'Cancelling...'
+                      : 'Cancel Booking'}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+
 
           {selectedBooking && (
             <div className="ticket-view" ref={ticketRef}>
@@ -834,7 +1110,25 @@ function App() {
                     Welcome, {currentUser.user.name}!
                   </span>
 
-                  {currentUser.user.role === 'customer' && (
+                  {/* BECOME AN ORGANIZER */}
+                  {hasCustomerRole &&
+                    !hasOrganizerRole &&
+                    !hasAdminRole && (
+                      <button
+                        className="login-btn"
+                        onClick={() => {
+                          setMobileMenuOpen(false);
+                          handleBecomeOrganizer();
+                        }}
+                        disabled={organizerUpgradeLoading}
+                      >
+                        {organizerUpgradeLoading
+                          ? 'Upgrading...'
+                          : 'Become an Organizer'}
+                      </button>
+                    )}
+
+                  {hasCustomerRole && (
                     <button
                       className="login-btn"
                       onClick={() => {
@@ -851,7 +1145,7 @@ function App() {
                     </button>
                   )}
 
-                  {currentUser.user.role === 'organizer' && (
+                  {hasOrganizerRole && (
                     <button
                       className="login-btn"
                       onClick={() => {
@@ -867,7 +1161,7 @@ function App() {
                     </button>
                   )}
 
-                  {currentUser.user.role === 'admin' && (
+                  {hasAdminRole && (
                     <button
                       className="login-btn"
                       onClick={() => {
@@ -917,9 +1211,16 @@ function App() {
             </div>
           </nav>
 
+          {/* ORGANIZER UPGRADE MESSAGE */}
+          {organizerUpgradeMessage && (
+            <p role="status" className="backend-status">
+              {organizerUpgradeMessage}
+            </p>
+          )}
+
           {/* ORGANIZER DASHBOARD */}
           {showOrganizerDashboard &&
-            currentUser?.user?.role === 'organizer' && (
+            hasOrganizerRole && (
               <OrganizerDashboard
                 onBack={() => {
                   setShowOrganizerDashboard(false);
@@ -930,7 +1231,7 @@ function App() {
 
           {/* ADMIN DASHBOARD */}
           {showAdminDashboard &&
-            currentUser?.user?.role === 'admin' && (
+            hasAdminRole && (
               <AdminDashboard
                 onBack={() => {
                   setShowAdminDashboard(false);
@@ -946,6 +1247,14 @@ function App() {
               <p><strong>Name:</strong> {profile.name}</p>
               <p><strong>Email:</strong> {profile.email}</p>
               <p><strong>Role:</strong> {profile.role}</p>
+
+              {Array.isArray(profile.roles) && (
+                <p>
+                  <strong>Account Permissions:</strong>{' '}
+                  {profile.roles.join(', ')}
+                </p>
+              )}
+
               <p>{profileMessage}</p>
             </div>
           )}
@@ -998,7 +1307,7 @@ function App() {
           {/* STEP 51 - SMART EVENT RECOMMENDATIONS */}
           {!showOrganizerDashboard &&
             !showAdminDashboard &&
-            currentUser?.user?.role === 'customer' && (
+            hasCustomerRole && (
               <section className="recommendations-section">
 
                 <div className="recommendations-heading">
@@ -1449,13 +1758,61 @@ function App() {
                     📅 {new Date(selectedEvent.date).toLocaleString('en-GB')}
                   </p>
 
-                  <p>
-                    📍 {selectedEvent.venue || selectedEvent.location}
-                  </p>
 
-                  {selectedEvent.city && (
-                    <p>🏙️ {selectedEvent.city}, Pakistan</p>
+                  {/* CUSTOMER EVENT VENUE INFORMATION */}
+                  {selectedEvent.type === 'In-person' && (
+                    <div className="event-venue-information">
+                      <h3>📍 Venue Information</h3>
+
+                      {selectedEvent.venue && (
+                        <p>
+                          <strong>Venue:</strong> {selectedEvent.venue}
+                        </p>
+                      )}
+
+                      {selectedEvent.location && (
+                        <p>
+                          <strong>Full Address:</strong> {selectedEvent.location}
+                        </p>
+                      )}
+
+                      {selectedEvent.city && (
+                        <p>
+                          <strong>City:</strong> {selectedEvent.city}
+                        </p>
+                      )}
+
+                      {selectedEvent.province && (
+                        <p>
+                          <strong>Province:</strong> {selectedEvent.province}
+                        </p>
+                      )}
+
+                      <p>
+                        <strong>Country:</strong>{' '}
+                        {selectedEvent.country || 'Pakistan'}
+                      </p>
+
+                      {getMapUrl(selectedEvent) && (
+                        <a
+                          className="map-link"
+                          href={getMapUrl(selectedEvent)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          📍 Open Exact Venue in Google Maps ↗
+                        </a>
+                      )}
+                    </div>
                   )}
+
+                  {selectedEvent.type === 'Online' && (
+                    <p>
+                      💻 <strong>Location:</strong>{' '}
+                      {selectedEvent.location || 'Online'}
+                    </p>
+                  )}
+
 
                   {selectedEvent.category && (
                     <p>Category: {selectedEvent.category}</p>
@@ -1556,7 +1913,7 @@ function App() {
                         </button>
                       )}
 
-                      {currentUser?.user?.role === 'customer' && (
+                      {currentUser && hasCustomerRole && (
                         <div className="booking-section">
                           <h3>Book Your Tickets</h3>
 
@@ -1613,12 +1970,11 @@ function App() {
                         </div>
                       )}
 
-                      {currentUser &&
-                        currentUser.user.role !== 'customer' && (
-                          <p>
-                            Only customer accounts can book tickets.
-                          </p>
-                        )}
+                      {currentUser && !hasCustomerRole && (
+                        <p>
+                          This account does not have Customer permissions to book tickets.
+                        </p>
+                      )}
                     </>
                   )}
                 </div>

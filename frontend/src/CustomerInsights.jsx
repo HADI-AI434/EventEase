@@ -1,3 +1,4 @@
+
 import { API_BASE_URL } from './api';
 import { useEffect, useState } from 'react';
 
@@ -18,15 +19,29 @@ import {
 } from 'recharts';
 
 const COLORS = [
-    '#10b981',
-    '#3b82f6',
-    '#f59e0b',
-    '#a78bfa',
-    '#ef4444',
-    '#06b6d4',
-    '#ec4899',
-    '#84cc16'
+    '#6258e8',
+    '#ff8066',
+    '#159b72',
+    '#3985d8',
+    '#e7a23b',
+    '#9b72d0',
+    '#df6595',
+    '#63a7a1'
 ];
+
+const TOOLTIP_STYLE = {
+    background: '#ffffff',
+    border: '1px solid #e6e8f0',
+    borderRadius: '12px',
+    color: '#20243a',
+    boxShadow: '0 8px 24px rgba(32, 36, 58, 0.10)',
+    padding: '10px 14px'
+};
+
+const AXIS_STYLE = {
+    fill: '#737991',
+    fontSize: 12
+};
 
 function formatCurrency(value) {
     return `Rs. ${Number(value || 0).toLocaleString('en-PK')}`;
@@ -44,6 +59,19 @@ function formatMonth(month) {
         month: 'short',
         year: '2-digit'
     });
+}
+
+// Supports both new multi-role accounts and older accounts.
+function getUserRoles(user) {
+    if (Array.isArray(user?.roles)) {
+        return user.roles;
+    }
+
+    if (user?.role === 'organizer') {
+        return ['customer', 'organizer'];
+    }
+
+    return user?.role ? [user.role] : [];
 }
 
 function CustomerInsights({ token }) {
@@ -72,9 +100,11 @@ function CustomerInsights({ token }) {
                 throw new Error('Please log in to view your insights.');
             }
 
+            const userRoles = getUserRoles(savedUser?.user);
+
             if (
-                savedUser?.user?.role &&
-                savedUser.user.role !== 'customer'
+                userRoles.length > 0 &&
+                !userRoles.includes('customer')
             ) {
                 throw new Error('Customer account required.');
             }
@@ -115,21 +145,42 @@ function CustomerInsights({ token }) {
     if (loading) {
         return (
             <section className="customer-insights">
-                <h2>My Event Insights</h2>
-                <p role="status">Loading your personal analytics...</p>            </section>
+                <div className="customer-insights-header">
+                    <div>
+                        <p className="customer-insights-eyebrow">
+                            YOUR EVENT ACTIVITY
+                        </p>
+                        <h2>My Event Insights</h2>
+                    </div>
+                </div>
+
+                <p role="status">
+                    Loading your personal analytics...
+                </p>
+            </section>
         );
     }
 
     if (error) {
         return (
             <section className="customer-insights">
-                <h2>My Event Insights</h2>
+                <div className="customer-insights-header">
+                    <div>
+                        <p className="customer-insights-eyebrow">
+                            YOUR EVENT ACTIVITY
+                        </p>
+                        <h2>My Event Insights</h2>
+                    </div>
+                </div>
 
                 <p className="customer-insights-error" role="alert">
                     {error}
                 </p>
 
-                <button onClick={fetchCustomerAnalytics}>
+                <button
+                    type="button"
+                    onClick={fetchCustomerAnalytics}
+                >
                     Try Again
                 </button>
             </section>
@@ -167,6 +218,7 @@ function CustomerInsights({ token }) {
                 </div>
 
                 <button
+                    type="button"
                     onClick={fetchCustomerAnalytics}
                     disabled={loading}
                 >
@@ -174,37 +226,45 @@ function CustomerInsights({ token }) {
                 </button>
             </div>
 
-            {/* CUSTOMER SUMMARY */}
             <div className="customer-insights-stats">
 
                 <div className="customer-insight-card">
-                    <h3>Total Bookings</h3>
+                    <span className="insight-card-label">
+                        Total Bookings
+                    </span>
                     <p>{summary.totalBookings ?? 0}</p>
                 </div>
 
                 <div className="customer-insight-card">
-                    <h3>Successful Bookings</h3>
+                    <span className="insight-card-label">
+                        Successful Bookings
+                    </span>
                     <p>{summary.successfulBookings ?? 0}</p>
                 </div>
 
                 <div className="customer-insight-card">
-                    <h3>Tickets Purchased</h3>
+                    <span className="insight-card-label">
+                        Tickets Purchased
+                    </span>
                     <p>{summary.ticketsPurchased ?? 0}</p>
                 </div>
 
                 <div className="customer-insight-card">
-                    <h3>Total Spending</h3>
+                    <span className="insight-card-label">
+                        Total Spending
+                    </span>
                     <p>{formatCurrency(summary.totalSpent)}</p>
                 </div>
 
             </div>
 
-            {/* CANCELLATION AND PREFERRED CATEGORY */}
             <div className="customer-insights-highlights">
 
                 <div className="customer-highlight-card">
                     <span>Cancelled Bookings</span>
-                    <strong>{summary.cancelledBookings ?? 0}</strong>
+                    <strong>
+                        {summary.cancelledBookings ?? 0}
+                    </strong>
                 </div>
 
                 <div className="customer-highlight-card">
@@ -217,7 +277,6 @@ function CustomerInsights({ token }) {
 
             </div>
 
-            {/* MONTHLY SPENDING */}
             <div className="customer-chart-card">
                 <h3>Monthly Spending</h3>
 
@@ -227,19 +286,32 @@ function CustomerInsights({ token }) {
 
                 {hasActivity ? (
                     <ResponsiveContainer width="100%" height={300}>
-                        <LineChart data={monthlyActivity}>
+                        <LineChart
+                            data={monthlyActivity}
+                            margin={{
+                                top: 10,
+                                right: 15,
+                                left: 5,
+                                bottom: 5
+                            }}
+                        >
                             <CartesianGrid
                                 strokeDasharray="3 3"
-                                stroke="#334155"
+                                stroke="#e6e8f0"
+                                vertical={false}
                             />
 
                             <XAxis
                                 dataKey="monthLabel"
-                                stroke="#aab6c7"
+                                tick={AXIS_STYLE}
+                                axisLine={{ stroke: '#d6d9e5' }}
+                                tickLine={false}
                             />
 
                             <YAxis
-                                stroke="#aab6c7"
+                                tick={AXIS_STYLE}
+                                axisLine={false}
+                                tickLine={false}
                                 tickFormatter={value =>
                                     `${(value / 1000).toFixed(0)}k`
                                 }
@@ -247,30 +319,37 @@ function CustomerInsights({ token }) {
 
                             <Tooltip
                                 formatter={value => formatCurrency(value)}
-                                contentStyle={{
-                                    background: '#172235',
-                                    border: '1px solid #334155',
-                                    borderRadius: '8px',
-                                    color: '#fff'
-                                }}
+                                contentStyle={TOOLTIP_STYLE}
                             />
 
                             <Line
                                 type="monotone"
                                 dataKey="spending"
                                 name="Monthly Spending"
-                                stroke="#10b981"
+                                stroke="#6258e8"
                                 strokeWidth={3}
-                                activeDot={{ r: 7 }}
+                                dot={{
+                                    r: 4,
+                                    fill: '#6258e8',
+                                    strokeWidth: 2,
+                                    stroke: '#ffffff'
+                                }}
+                                activeDot={{
+                                    r: 7,
+                                    fill: '#ff8066',
+                                    stroke: '#ffffff',
+                                    strokeWidth: 2
+                                }}
                             />
                         </LineChart>
                     </ResponsiveContainer>
                 ) : (
-                    <p>No spending activity available yet.</p>
+                    <p className="chart-empty">
+                        No spending activity available yet.
+                    </p>
                 )}
             </div>
 
-            {/* MONTHLY TICKETS */}
             <div className="customer-chart-card">
                 <h3>Monthly Ticket Activity</h3>
 
@@ -280,42 +359,54 @@ function CustomerInsights({ token }) {
 
                 {hasActivity ? (
                     <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={monthlyActivity}>
+                        <BarChart
+                            data={monthlyActivity}
+                            margin={{
+                                top: 10,
+                                right: 15,
+                                left: 5,
+                                bottom: 5
+                            }}
+                        >
                             <CartesianGrid
                                 strokeDasharray="3 3"
-                                stroke="#334155"
+                                stroke="#e6e8f0"
+                                vertical={false}
                             />
 
                             <XAxis
                                 dataKey="monthLabel"
-                                stroke="#aab6c7"
+                                tick={AXIS_STYLE}
+                                axisLine={{ stroke: '#d6d9e5' }}
+                                tickLine={false}
                             />
 
-                            <YAxis stroke="#aab6c7" />
+                            <YAxis
+                                tick={AXIS_STYLE}
+                                axisLine={false}
+                                tickLine={false}
+                            />
 
                             <Tooltip
-                                contentStyle={{
-                                    background: '#172235',
-                                    border: '1px solid #334155',
-                                    borderRadius: '8px',
-                                    color: '#fff'
-                                }}
+                                contentStyle={TOOLTIP_STYLE}
                             />
 
                             <Bar
                                 dataKey="tickets"
                                 name="Tickets Purchased"
-                                fill="#3b82f6"
-                                radius={[6, 6, 0, 0]}
+                                fill="#ff8066"
+                                radius={[7, 7, 0, 0]}
+                                maxBarSize={55}
                             />
                         </BarChart>
                     </ResponsiveContainer>
                 ) : (
-                    <p>No ticket activity available yet.</p>
+                    <p className="chart-empty">
+                        No ticket activity available yet.
+                    </p>
                 )}
             </div>
 
-            {/* CATEGORY PREFERENCES */}
             <div className="customer-chart-card">
                 <h3>My Event Preferences</h3>
 
@@ -332,7 +423,9 @@ function CustomerInsights({ token }) {
                                 nameKey="category"
                                 cx="50%"
                                 cy="50%"
-                                outerRadius={110}
+                                outerRadius={105}
+                                innerRadius={55}
+                                paddingAngle={3}
                                 label={({ category, percent }) =>
                                     `${category} ${(percent * 100).toFixed(0)}%`
                                 }
@@ -341,22 +434,28 @@ function CustomerInsights({ token }) {
                                     <Cell
                                         key={item.category}
                                         fill={COLORS[index % COLORS.length]}
+                                        stroke="#ffffff"
+                                        strokeWidth={2}
                                     />
                                 ))}
                             </Pie>
 
                             <Tooltip
-                                formatter={(value, name) => [
-                                    value,
-                                    name
-                                ]}
+                                contentStyle={TOOLTIP_STYLE}
                             />
 
-                            <Legend />
+                            <Legend
+                                verticalAlign="bottom"
+                                height={35}
+                                wrapperStyle={{
+                                    color: '#737991',
+                                    fontSize: '12px'
+                                }}
+                            />
                         </PieChart>
                     </ResponsiveContainer>
                 ) : (
-                    <p>
+                    <p className="chart-empty">
                         Your event preferences will appear after your
                         first successful booking.
                     </p>
