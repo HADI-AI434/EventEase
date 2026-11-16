@@ -1,83 +1,269 @@
 # EventEase — Event Management & Ticketing
 
-EventEase is a React + Vite frontend with a Node.js/Express API and MongoDB database. The existing project includes event discovery, search and filters, customer registration/login, bookings, digital tickets, organizer event management, admin tools, analytics, recommendations, venue links and image uploads.
+EventEase is a full-stack event management and ticketing platform built with React, Vite, Node.js, Express and MongoDB. It helps customers discover events and book tickets while providing organizers and administrators with tools to manage events, bookings and platform activity.
 
-## Scope and important behaviour
+**Live Website:** https://event-ease-44xo.vercel.app/
+**GitHub Repository:** https://github.com/HADI-AI434/EventEase
 
-- Event discovery is scoped to Pakistan and the supported Pakistani cities in the frontend.
-- Prices are displayed in PKR where an event price is available.
-- Organizer ticket verification is **upload-only**: an organizer selects an image containing a QR code. The app does not request camera access or start a live camera scanner.
-- Existing API routes and database models are retained. Do not delete or replace your existing MongoDB database when updating the app.
+## Project Overview
+
+EventEase provides a centralized platform for event discovery, ticket booking and event management. It includes customer authentication, digital tickets, QR-based ticket verification, organizer tools and administrative features.
+
+### Main Features
+
+- Event discovery, search and filtering
+- Customer registration and login
+- Event details and venue links
+- Ticket booking and booking history
+- Digital tickets with QR codes
+- Organizer event creation and management
+- Upload-only QR ticket verification
+- Admin management tools
+- Organizer and administrative analytics
+- Event recommendations
+- Event image uploads
+
+## Scope and Important Behaviour
+
+- Event discovery focuses on Pakistan and the supported Pakistani cities configured in the frontend.
+- Event prices are displayed in PKR where a price is available.
+- Ticket verification is upload-only. Organizers select an image containing a QR code for verification.
+- The application does not request camera access or start a live camera scanner.
+- Existing API routes and MongoDB models should be retained when maintaining or updating the project.
+- Do not delete or replace the existing MongoDB database when updating the application.
+
+## Technology Stack
+
+| Area | Technologies |
+|---|---|
+| Frontend | React, Vite, JavaScript, CSS |
+| Backend | Node.js, Express |
+| Database | MongoDB, Mongoose |
+| Authentication | JSON Web Tokens, bcryptjs |
+| QR Tickets | qrcode, qrcode.react |
+| Charts | Recharts |
+| PDF Tickets | jsPDF |
+| Image Uploads | Cloudinary, Multer |
+| Email | Nodemailer |
+| Deployment | Vercel |
+| Version Control | Git, GitHub |
 
 ## Requirements
 
 - Node.js 20 or newer (Node.js 22 LTS recommended)
 - npm
 - MongoDB Atlas or a local MongoDB server
+- Git
+- Visual Studio Code or another code editor
 
-## 1. Configure the backend
+## Project Structure
 
-Open a terminal in the project folder:
+```text
+EventEase/
+├── backend/
+│   ├── middleware/
+│   ├── models/
+│   ├── routes/
+│   ├── utils/
+│   ├── package.json
+│   └── server.js
+│
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   └── ...
+│   ├── package.json
+│   └── ...
+│
+└── README.md
+```
+
+The structure above shows the main project areas. Individual files and folders may vary as the project develops.
+
+## Local Installation and Setup
+
+### 1. Clone the repository
+
+```powershell
+git clone https://github.com/HADI-AI434/EventEase.git
+cd EventEase
+```
+
+### 2. Configure the backend
 
 ```powershell
 cd backend
-Copy-Item .env.example .env
 npm install
 ```
 
-Edit `backend/.env` and set at least:
+Create a file named `.env` inside the `backend` directory. Add your own configuration:
 
-- `MONGODB_URI`: your MongoDB connection string
-- `JWT_SECRET`: a long, private random string (never commit or share it)
-- `CORS_ORIGIN`: the frontend origin, normally `http://localhost:5173`
-- `FRONTEND_URL`: the frontend URL, normally `http://localhost:5173`
+```env
+PORT=5000
+MONGODB_URI=your_mongodb_connection_string
+JWT_SECRET=your_private_random_secret
+CORS_ORIGIN=http://localhost:5173
+FRONTEND_URL=http://localhost:5173
+```
 
-SMTP settings are needed for password-reset emails. Cloudinary settings are needed for organizer event-image uploads. The API can start without those optional integrations configured; the related feature will return an explanatory error until configured.
+Do not use the example placeholder values as real credentials.
 
-Start the API:
+The following additional variables are used for optional integrations:
+
+```env
+SMTP_HOST=your_smtp_host
+SMTP_PORT=your_smtp_port
+SMTP_USER=your_smtp_username
+SMTP_PASS=your_smtp_password
+EMAIL_FROM=your_sender_email
+
+CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
+CLOUDINARY_API_KEY=your_cloudinary_api_key
+CLOUDINARY_API_SECRET=your_cloudinary_api_secret
+```
+
+Configure these integrations only when you have the corresponding accounts and credentials.
+
+Start the backend:
 
 ```powershell
 npm run dev
 ```
 
-The API listens on `http://localhost:5000`. Check `http://localhost:5000/api/test` for the health response.
+The API normally runs at:
 
-## 2. Configure the frontend
+`http://localhost:5000`
 
-Open a second terminal from the project folder:
+Test the API endpoint:
+
+`http://localhost:5000/api/test`
+
+### 3. Configure the frontend
+
+Open a second terminal from the project root:
 
 ```powershell
 cd frontend
-Copy-Item .env.example .env
 npm install
+```
+
+The frontend uses `VITE_API_URL` to configure the backend API address.
+
+If you need to override the default local API address, create a file named `.env` inside `frontend`:
+
+```env
+VITE_API_URL=http://localhost:5000
+```
+
+Start the frontend:
+
+```powershell
 npm run dev
 ```
 
-Open the local URL printed by Vite (normally `http://localhost:5173`).
+Open the local URL printed by Vite, normally:
 
-For a production frontend build:
+`http://localhost:5173`
+
+### 4. Build the frontend for production
+
+From the frontend directory:
 
 ```powershell
 npm run build
+```
+
+To preview the production build locally:
+
+```powershell
 npm run preview
 ```
 
-## 3. Production configuration
+## Environment Configuration
 
-Before deployment, set `VITE_API_URL` to the deployed API base URL and set the backend `CORS_ORIGIN` and `FRONTEND_URL` to the deployed frontend URL. Configure MongoDB network access and credentials, JWT secret, SMTP and Cloudinary in the hosting provider's environment-variable settings. Never upload `.env` files or secrets to GitHub.
+| Variable | Location | Purpose |
+|---|---|---|
+| `MONGODB_URI` | Backend | MongoDB connection |
+| `JWT_SECRET` | Backend | Authentication token signing |
+| `PORT` | Backend | API server port |
+| `CORS_ORIGIN` | Backend | Allowed frontend origins |
+| `FRONTEND_URL` | Backend | Frontend URL used by relevant authentication flows |
+| `VITE_API_URL` | Frontend | Backend API base URL |
+| `SMTP_HOST` | Backend | Email server |
+| `SMTP_PORT` | Backend | Email server port |
+| `SMTP_USER` | Backend | Email account username |
+| `SMTP_PASS` | Backend | Email account password |
+| `EMAIL_FROM` | Backend | Sender address |
+| `CLOUDINARY_CLOUD_NAME` | Backend | Cloudinary account |
+| `CLOUDINARY_API_KEY` | Backend | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | Backend | Cloudinary API secret |
 
-## 4. Functional verification checklist
+Never commit `.env` files, database credentials, API secrets or private authentication keys to GitHub.
 
-1. Confirm the backend health endpoint reports a connected database.
-2. Register and log in with a test customer account.
-3. Discover events, search, filter by category/city and open an event.
-4. Complete a test booking and confirm the booking appears in My Bookings.
-5. Open the digital ticket and verify its QR code is displayed.
-6. Log in as an organizer, create/manage an event and upload an event image after Cloudinary is configured.
-7. Verify a test ticket by uploading its QR image in the organizer dashboard. Do not use camera scanning.
-8. Check organizer/admin analytics with accounts that have the relevant roles.
-9. Test mobile and desktop layouts and verify the production API URLs/CORS settings.
+## Production Deployment
 
-## Notes
+The EventEase website is deployed using Vercel.
 
-This package is a source-code handoff. Live deployment, real payment processing, production credentials, SMTP delivery, Cloudinary uploads and end-to-end tests against your own MongoDB account require your environment and credentials; they are not represented as completed by a local source edit.
+For production configuration:
+
+1. Set the frontend `VITE_API_URL` to the deployed backend API base URL.
+2. Set the backend `CORS_ORIGIN` to the deployed frontend origin.
+3. Set the backend `FRONTEND_URL` to the deployed frontend URL.
+4. Configure MongoDB connectivity and credentials.
+5. Configure the JWT secret.
+6. Configure SMTP and Cloudinary credentials when using those integrations.
+7. Redeploy the affected application after changing production environment variables.
+
+**Live Website:** https://event-ease-44xo.vercel.app/
+
+## Functional Testing Checklist
+
+Use this checklist when testing a local or production deployment:
+
+- [ ] Backend starts and connects to MongoDB.
+- [ ] Customer registration works.
+- [ ] Customer login works.
+- [ ] Events can be discovered and opened.
+- [ ] Search and filters work.
+- [ ] Customers can complete a test booking.
+- [ ] Bookings appear in the customer's booking history.
+- [ ] Digital tickets display their QR codes.
+- [ ] Organizers can create and manage events.
+- [ ] Event image uploads work when Cloudinary is configured.
+- [ ] Organizers can verify tickets by uploading QR images.
+- [ ] Admin and organizer dashboards display their relevant information.
+- [ ] Desktop and mobile layouts work correctly.
+
+## Security Considerations
+
+- Passwords should be securely hashed.
+- Authentication should use protected JWT tokens.
+- Role-based access should restrict administrative and organizer operations.
+- Secrets and credentials must remain outside the Git repository.
+- MongoDB should use appropriate access controls and network restrictions.
+- Production CORS settings should allow only the intended frontend origins.
+
+## Future Improvements
+
+Potential future enhancements include:
+
+- Online payment gateway integration
+- Additional event discovery features
+- Improved reporting and analytics
+- Additional notification options
+- Further performance and accessibility improvements
+
+## Project Status
+
+EventEase has been deployed, and its live functionality has been tested by the project developer.
+
+Optional third-party integrations depend on their respective service configurations. Real payment processing should not be considered implemented unless a payment gateway is separately integrated and tested.
+
+## Author
+
+Developed as a university and portfolio project focused on event management, database management and software engineering.
+
+---
+
+**EventEase — Discover Events. Book Tickets. Manage Experiences.**
