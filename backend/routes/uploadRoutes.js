@@ -119,17 +119,23 @@ router.post(
                     images: results
                 });
 
+
             } catch (uploadError) {
-                console.error(
-                    'Cloudinary upload error:',
-                    uploadError.message
-                );
+                console.error('Cloudinary upload error details:', {
+                    message: uploadError.message,
+                    name: uploadError.name,
+                    http_code: uploadError.http_code,
+                    statusCode: uploadError.statusCode,
+                    cloudinaryError: uploadError.error?.message,
+                    cause: uploadError.cause?.message
+                });
 
                 return res.status(500).json({
                     success: false,
                     message: 'One or more images could not be uploaded.'
                 });
             }
+
         });
     }
 );
